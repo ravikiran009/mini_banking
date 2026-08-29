@@ -11,42 +11,46 @@ def health():
 
 
 @app.get("/user_id/{user_id}")
-def get_user(user_id:int):
+def get_user(user_id: int):
     log = Logger(trace_id=str(uuid4()))
     try:
-        _usr = next(user(log, user_id),None)
+        _usr = next(user(log, user_id), None)
         if not _usr:
             return {}
         return _usr.model_dump(by_alias=True, exclude_none=True)
-    except:
+    except Exception as exc:
+        log.error(f"Failed to fetch user {user_id}: {exc}", operation="GetUser")
         return "An unexpected error occured. Please try again later"
 
 
 @app.get("/v2/user_id/{user_id}")
-def get_user_v2(user_id:int):
+def get_user_v2(user_id: int):
     log = Logger(trace_id=str(uuid4()))
     try:
-        _usr = next(user_v2(log, user_id),None)
+        _usr = next(user_v2(log, user_id), None)
         if not _usr:
             return {}
         return _usr
-    except:
+    except Exception as exc:
+        log.error(f"Failed to fetch user_v2 {user_id}: {exc}", operation="GetUserV2")
         return "An unexpected error occured. Please try again later"
 
 
 @app.get("/transactions/{user_id}")
-def get_transactions(user_id:int, limit:int|None=None):
+def get_transactions(user_id: int, limit: int | None = None):
     log = Logger(trace_id=str(uuid4()))
     try:
         return [item.model_dump(by_alias=True, exclude_none=True) for item in transactions(log, user_id, limit)]
-    except:
+    except Exception as exc:
+        log.error(f"Failed to fetch transactions for user {user_id}: {exc}", operation="GetTransactions")
         return "An unexpected error occured. Please try again later"
 
 
 @app.get("/v2/transactions/{user_id}")
-def get_transactions_v2(user_id:int, limit:int|None=None):
+def get_transactions_v2(user_id: int, limit: int | None = None):
     log = Logger(trace_id=str(uuid4()))
     try:
         return list(transactions_v2(log, user_id, limit))
-    except:
-        return "An unexpected error occured. Please try again later"
+    except Exception as exc:
+        log.error(f"Failed to fetch transactions_v2 for user {user_id}: {exc}", operation="GetTransactionsV2")
+        return "An unexpected error occured. Please try again later"
