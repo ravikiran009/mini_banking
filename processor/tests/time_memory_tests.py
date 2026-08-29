@@ -46,134 +46,135 @@ class UserV2NoSlots:
     balance : int
     last_transaction_id : str | None = None
 
-#================= Commence Memory and Time Performace Tests =================#
-from common.logger import Logger
-import tracemalloc
-import random
-import time
+if __name__=='__main__':
+    #================= Commence Memory and Time Performace Tests =================#
+    from common.logger import Logger
+    import tracemalloc
+    import random
+    import time
 
-log=Logger(trace_id='PerformanceTest')
+    log=Logger(trace_id='PerformanceTest')
 
-data_size = 10_000_000
+    data_size = 10_000_000
 
-tracemalloc.start()
-st = time.perf_counter()
-data = [
-    dict(
-        user_id = i,
-        account_id = f'acc_{i:03d}',
-        balance = random.randint(50_000, 5_00_000),
-        last_transaction_id = None
-    )
-    for i in range(1,data_size+1)
-]
-cur, peak = tracemalloc.get_traced_memory()
-en = time.perf_counter()
-log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfDict')
-log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfDict')
-tracemalloc.stop()
+    tracemalloc.start()
+    st = time.perf_counter()
+    data = [
+        dict(
+            user_id = i,
+            account_id = f'acc_{i:03d}',
+            balance = random.randint(50_000, 5_00_000),
+            last_transaction_id = None
+        )
+        for i in range(1,data_size+1)
+    ]
+    cur, peak = tracemalloc.get_traced_memory()
+    en = time.perf_counter()
+    log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfDict')
+    log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfDict')
+    tracemalloc.stop()
 
-tracemalloc.start()
-st = time.perf_counter()
-data = [
-    User(
-        user_id = i,
-        account_id = f'acc_{i:03d}',
-        balance = random.randint(50_000, 5_00_000),
-        last_transaction_id = None
-    )
-    for i in range(1,data_size+1)
-]
-cur, peak = tracemalloc.get_traced_memory()
-en = time.perf_counter()
-log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfPydanticUser')
-log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfPydanticUser')
-tracemalloc.stop()
+    tracemalloc.start()
+    st = time.perf_counter()
+    data = [
+        User(
+            user_id = i,
+            account_id = f'acc_{i:03d}',
+            balance = random.randint(50_000, 5_00_000),
+            last_transaction_id = None
+        )
+        for i in range(1,data_size+1)
+    ]
+    cur, peak = tracemalloc.get_traced_memory()
+    en = time.perf_counter()
+    log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfPydanticUser')
+    log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfPydanticUser')
+    tracemalloc.stop()
 
-tracemalloc.start()
-st = time.perf_counter()
-data = [
-    UserSlots(
-        user_id = i,
-        account_id = f'acc_{i:03d}',
-        balance = random.randint(50_000, 5_00_000),
-        last_transaction_id = None
-    )
-    for i in range(1,data_size+1)
-]
-cur, peak = tracemalloc.get_traced_memory()
-en = time.perf_counter()
-log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfPydanticUserSlots')
-log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfPydanticUserSlots')
-tracemalloc.stop()
+    tracemalloc.start()
+    st = time.perf_counter()
+    data = [
+        UserSlots(
+            user_id = i,
+            account_id = f'acc_{i:03d}',
+            balance = random.randint(50_000, 5_00_000),
+            last_transaction_id = None
+        )
+        for i in range(1,data_size+1)
+    ]
+    cur, peak = tracemalloc.get_traced_memory()
+    en = time.perf_counter()
+    log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfPydanticUserSlots')
+    log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfPydanticUserSlots')
+    tracemalloc.stop()
 
-tracemalloc.start()
-st = time.perf_counter()
-data = [
-    UserNoSlots(
-        user_id = i,
-        account_id = f'acc_{i:03d}',
-        balance = random.randint(50_000, 5_00_000),
-        last_transaction_id = None
-    )
-    for i in range(1,data_size+1)
-]
-cur, peak = tracemalloc.get_traced_memory()
-en = time.perf_counter()
-log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfPydanticUserNoSlots')
-log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfPydanticUserNoSlots')
-tracemalloc.stop()
+    tracemalloc.start()
+    st = time.perf_counter()
+    data = [
+        UserNoSlots(
+            user_id = i,
+            account_id = f'acc_{i:03d}',
+            balance = random.randint(50_000, 5_00_000),
+            last_transaction_id = None
+        )
+        for i in range(1,data_size+1)
+    ]
+    cur, peak = tracemalloc.get_traced_memory()
+    en = time.perf_counter()
+    log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfPydanticUserNoSlots')
+    log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfPydanticUserNoSlots')
+    tracemalloc.stop()
 
-tracemalloc.start()
-st = time.perf_counter()
-data = [
-    UserV2(
-        user_id = i,
-        account_id = f'acc_{i:03d}',
-        balance = random.randint(50_000, 5_00_000),
-        last_transaction_id = None
-    )
-    for i in range(1,data_size+1)
-]
-cur, peak = tracemalloc.get_traced_memory()
-en = time.perf_counter()
-log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfDataClassUser')
-log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfDataClassUser')
-tracemalloc.stop()
+    tracemalloc.start()
+    st = time.perf_counter()
+    data = [
+        UserV2(
+            user_id = i,
+            account_id = f'acc_{i:03d}',
+            balance = random.randint(50_000, 5_00_000),
+            last_transaction_id = None
+        )
+        for i in range(1,data_size+1)
+    ]
+    cur, peak = tracemalloc.get_traced_memory()
+    en = time.perf_counter()
+    log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfDataClassUser')
+    log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfDataClassUser')
+    tracemalloc.stop()
 
-tracemalloc.start()
-st = time.perf_counter()
-data = [
-    UserV2Slots(
-        user_id = i,
-        account_id = f'acc_{i:03d}',
-        balance = random.randint(50_000, 5_00_000),
-        last_transaction_id = None
-    )
-    for i in range(1,data_size+1)
-]
-cur, peak = tracemalloc.get_traced_memory()
-en = time.perf_counter()
-log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfDataClassUserSlots')
-log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfDataClassUserSlots')
-tracemalloc.stop()
+    tracemalloc.start()
+    st = time.perf_counter()
+    data = [
+        UserV2Slots(
+            user_id = i,
+            account_id = f'acc_{i:03d}',
+            balance = random.randint(50_000, 5_00_000),
+            last_transaction_id = None
+        )
+        for i in range(1,data_size+1)
+    ]
+    cur, peak = tracemalloc.get_traced_memory()
+    en = time.perf_counter()
+    log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfDataClassUserSlots')
+    log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfDataClassUserSlots')
+    tracemalloc.stop()
 
-tracemalloc.start()
-st = time.perf_counter()
-data = [
-    UserV2NoSlots(
-        user_id = i,
-        account_id = f'acc_{i:03d}',
-        balance = random.randint(50_000, 5_00_000),
-        last_transaction_id = None
-    )
-    for i in range(1,data_size+1)
-]
-cur, peak = tracemalloc.get_traced_memory()
-en = time.perf_counter()
-log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfDataClassUserNoSlots')
-log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfDataClassUserNoSlots')
-tracemalloc.stop()
+    tracemalloc.start()
+    st = time.perf_counter()
+    data = [
+        UserV2NoSlots(
+            user_id = i,
+            account_id = f'acc_{i:03d}',
+            balance = random.randint(50_000, 5_00_000),
+            last_transaction_id = None
+        )
+        for i in range(1,data_size+1)
+    ]
+    cur, peak = tracemalloc.get_traced_memory()
+    en = time.perf_counter()
+    log.info(f'Time consumed: {(en-st)*1000} milliseconds', object='ListOfDataClassUserNoSlots')
+    log.info(f'Memory consumed: {cur} bytes, {peak} bytes', object='ListOfDataClassUserNoSlots')
+    tracemalloc.stop()
 
 
 # Test results for data_size: 10

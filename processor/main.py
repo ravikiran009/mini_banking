@@ -2,8 +2,6 @@ from uuid import uuid4
 from fastapi import FastAPI
 from processor.db import user, user_v2, transactions, transactions_v2
 from common.logger import Logger
-from functools import wraps
-import time  
 
 app = FastAPI()
 
