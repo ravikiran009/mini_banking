@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transactions — Mini Bank</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <header>
+        <div class="header-container">
+            <a href="index.html" class="brand">
+                <div class="brand-icon">$</div>
+                <div>
+                    <span class="brand-name">Mini Bank</span>
+                    <span class="brand-badge">Ledger</span>
+                </div>
+            </a>
+            <ul class="navbar">
+                <li class="nav-item"><a href="index.html">Dashboard</a></li>
+                <li class="nav-item active"><a href="transactions.html">Transactions</a></li>
+                <li class="nav-item"><a href="profile.html">Profile</a></li>
+            </ul>
+            <div class="user-selector-bar">
+                <label for="user-id-input" style="font-size: 0.85rem; color: var(--text-secondary);">User ID:</label>
+                <input type="number" id="user-id-input" class="input-user-select" value="1" min="1">
+                <button id="btn-load-tx" class="btn-sm btn-primary" onclick="loadTransactions()">Filter</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div class="hero">
+            <div>
+                <h1 class="hero-title">Transaction Ledger</h1>
+            </div>
+            
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <label for="limit-select" style="font-size: 0.85rem; color: var(--text-secondary);">Rows:</label>
+                <select id="limit-select" class="input-user-select" style="width: 80px;" onchange="loadTransactions()">
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="card">
+            <!-- Filter Bar -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn-sm btn-primary" id="filter-all" onclick="setFilter('ALL')">All</button>
+                    <button class="btn-sm" style="background: var(--bg-secondary); color: var(--text-secondary);" id="filter-credit" onclick="setFilter('CREDIT')">Credits</button>
+                    <button class="btn-sm" style="background: var(--bg-secondary); color: var(--text-secondary);" id="filter-debit" onclick="setFilter('DEBIT')">Debits</button>
+                </div>
+                <div>
+                    <input type="text" id="search-input" placeholder="Search Tx ID..." class="input-user-select" style="width: 180px;" onkeyup="filterTable()">
+                </div>
+            </div>
+
+            <!-- Transactions Table -->
+            <div class="table-container">
+                <table id="full-transactions-table">
+                    <thead>
+                        <tr>
+                            <th>Transaction ID</th>
+                            <th>Type</th>
+                            <th>Amount</th>
+                            <th>From User</th>
+                            <th>Timestamp (UTC)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tx-tbody">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                                Loading transactions from Cloud Spanner...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        Mini Bank &bull; Built with FastAPI, Cloud Spanner Emulator
+    </footer>
+
+    <script>
+        const API_BASE = "http://localhost:8000";
+        let rawTransactions = [];
+        let activeFilter = 'ALL';
+
+        async function loadTransactions() {
+            const userId = document.getElementById("user-id-input").value || 1;
+            const limit = document.getElementById("limit-select").value || 10;
+            document.getElementById("header-user-id").innerText = userId;
+
+            const tbody = document.getElementById("tx-tbody");
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading...</td></tr>`;
+
+            try {
+                const res = await fetch(`${API_BASE}/transactions/${userId}?limit=${limit}`);
+                if (res.ok) {
+                    rawTransactions = await res.json();
+                    renderTable(rawTransactions);
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--danger); padding: 2rem;">Error fetching transactions (HTTP ${res.status})</td></tr>`;
+                }
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--danger); padding: 2rem;">Failed to connect to API backend at ${API_BASE}</td></tr>`;
+            }
+        }
+
+        function renderTable(list) {
+            const tbody = document.getElementById("tx-tbody");
+            tbody.innerHTML = "";
+
+            let filtered = list;
+            if (activeFilter !== 'ALL') {
+                filtered = filtered.filter(tx => tx.TransactionType === activeFilter);
+            }
+
+            const query = document.getElementById("search-input").value.toLowerCase();
+            if (query) {
+                filtered = filtered.filter(tx => (tx.TransactionId || '').toLowerCase().includes(query));
+            }
+
+            if (!filtered || filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No matching transactions found.</td></tr>`;
+                return;
+            }
+
+            filtered.forEach(tx => {
+                const tr = document.createElement("tr");
+                const isCredit = tx.TransactionType === 'CREDIT';
+                const badgeClass = isCredit ? 'badge-credit' : 'badge-debit';
+                const prefix = isCredit ? '+' : '-';
+                const amountColor = isCredit ? 'var(--success)' : 'var(--danger)';
+
+                tr.innerHTML = `
+                    <td class="mono" style="font-weight: 600;">${tx.TransactionId}</td>
+                    <td><span class="badge ${badgeClass}">${tx.TransactionType}</span></td>
+                    <td class="mono" style="font-weight: 700; color: ${amountColor};">${prefix}₹ ${Number(tx.Amount).toLocaleString('en-IN')}</td>
+                    <td class="mono">${tx.FromUser ?? '-'}</td>
+                    <td style="color: var(--text-secondary);">${tx.TransactionTimestamp ? new Date(tx.TransactionTimestamp).toISOString().replace('.000', '') : '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function setFilter(type) {
+            activeFilter = type;
+            document.querySelectorAll("#filter-all, #filter-credit, #filter-debit").forEach(btn => {
+                btn.className = "btn-sm";
+                btn.style.background = "var(--bg-secondary)";
+                btn.style.color = "var(--text-secondary)";
+            });
+
+            const activeBtn = document.getElementById(`filter-${type.toLowerCase()}`);
+            if (activeBtn) {
+                activeBtn.className = "btn-sm btn-primary";
+                activeBtn.style.background = "var(--accent-primary)";
+                activeBtn.style.color = "#fff";
+            }
+
+            renderTable(rawTransactions);
+        }
+
+        function filterTable() {
+            renderTable(rawTransactions);
+        }
+
+        window.onload = loadTransactions;
+    </script>
+</body>
+</html>
