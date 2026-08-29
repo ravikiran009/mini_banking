@@ -1,6 +1,6 @@
 from uuid import uuid4
 from fastapi import FastAPI
-from processor.db import user, user_v2, transactions, transactions_v2
+from common.db import StoreSpannerExecutorSingleton
 from common.logger import Logger
 
 app = FastAPI()
@@ -14,7 +14,8 @@ def health():
 def get_user(user_id: int):
     log = Logger(trace_id=str(uuid4()))
     try:
-        _usr = next(user(log, user_id), None)
+        spanner_executor = StoreSpannerExecutorSingleton(log)
+        _usr = next(spanner_executor.user(user_id), None)
         if not _usr:
             return {}
         return _usr.model_dump(by_alias=True, exclude_none=True)
@@ -27,7 +28,8 @@ def get_user(user_id: int):
 def get_user_v2(user_id: int):
     log = Logger(trace_id=str(uuid4()))
     try:
-        _usr = next(user_v2(log, user_id), None)
+        spanner_executor = StoreSpannerExecutorSingleton(log)
+        _usr = next(spanner_executor.user_v2(log, user_id), None)
         if not _usr:
             return {}
         return _usr
@@ -40,7 +42,8 @@ def get_user_v2(user_id: int):
 def get_transactions(user_id: int, limit: int | None = None):
     log = Logger(trace_id=str(uuid4()))
     try:
-        return [item.model_dump(by_alias=True, exclude_none=True) for item in transactions(log, user_id, limit)]
+        spanner_executor = StoreSpannerExecutorSingleton(log)
+        return [item.model_dump(by_alias=True, exclude_none=True) for item in spanner_executor.transactions(log, user_id, limit)]
     except Exception as exc:
         log.error(f"Failed to fetch transactions for user {user_id}: {exc}", operation="GetTransactions")
         return "An unexpected error occured. Please try again later"
@@ -50,7 +53,8 @@ def get_transactions(user_id: int, limit: int | None = None):
 def get_transactions_v2(user_id: int, limit: int | None = None):
     log = Logger(trace_id=str(uuid4()))
     try:
-        return list(transactions_v2(log, user_id, limit))
+        spanner_executor = StoreSpannerExecutorSingleton(log)
+        return list(spanner_executor.transactions_v2(log, user_id, limit))
     except Exception as exc:
         log.error(f"Failed to fetch transactions_v2 for user {user_id}: {exc}", operation="GetTransactionsV2")
-        return "An unexpected error occured. Please try again later"
+        return "An unexpected error occured. Please try again later"
