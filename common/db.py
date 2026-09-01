@@ -1,18 +1,26 @@
 import os
+import pandas as pd
 from uuid import uuid4
 from typing import TypeVar
 from pydantic import BaseModel,ValidationError
 from collections.abc import Iterator
 from google.cloud import spanner
 from google.cloud.spanner_v1.streamed import StreamedResultSet
+from google.cloud.spanner_v1.pool import BurstyPool
 from common.logger import Logger
 from common.models.user import User, UserV2
 from common.models.transaction import Transaction, TransactionV2
+
 
 # Initialize Once when module loads
 client=spanner.Client(project='mini-banking')
 database_instance=client.instance(instance_id='store-db-instance')
 _database=database_instance.database(database_id='store-db')
+
+# Create a pool of SpannerStagingInstances
+_pool=BurstyPool(target_size=10)
+staging_database_instance=client.instance(instance_id='staging-instance')
+_staging_database=staging_database_instance.database(database_id='staging-db', pool=_pool)
 
 
 class StoreSpannerExecutorSingleton:
@@ -32,7 +40,6 @@ class StoreSpannerExecutorSingleton:
             item = model_class.model_validate(row_dict)
             yield item
 
-
     T = TypeVar('T')
 
     def _yield_response_payload_v2(self,model_class:type[T],data:StreamedResultSet) -> Iterator[T]:
@@ -47,7 +54,6 @@ class StoreSpannerExecutorSingleton:
             item = model_class(**row_dict)
             yield item        
 
-
     def user(self, user_id:int) -> Iterator[User]:
         sql="select * from users where user_id = @user_id"
         params={"user_id":user_id}
@@ -60,7 +66,6 @@ class StoreSpannerExecutorSingleton:
             self.log.error(f'Unable to retrieve data : {exc}', operation='FetchUser')
             raise
 
-
     def user_v2(self, user_id:int) -> Iterator[UserV2]:
         sql="select * from users where user_id = @user_id"
         params={"user_id":user_id}
@@ -72,7 +77,6 @@ class StoreSpannerExecutorSingleton:
         except Exception as exc:
             self.log.error(f'Unable to retrieve data : {exc}', operation='FetchUserV2')
             raise
-
 
     def transactions(self, user_id:int, limit: int|None) -> Iterator[Transaction]:
         sql="select * from transactions where user_id = @user_id order by transaction_timestamp"
@@ -89,7 +93,6 @@ class StoreSpannerExecutorSingleton:
         except Exception as exc:
             self.log.error(f'Unable to retrieve data : {exc}', operation='FetchTransactions')
             raise
-
 
     def transactions_v2(self, user_id:int, limit: int|None) -> Iterator[TransactionV2]:
         sql="select * from transactions where user_id = @user_id order by transaction_timestamp"
@@ -108,3 +111,38 @@ class StoreSpannerExecutorSingleton:
             raise
 
 
+class StagingSpannerExecutorPool:
+    _staging_instances = None
+
+    def __init__(self,log:Logger):
+        self.log = log
+        self.database = _staging_database
+
+    def _yield_events(self, data: StreamedResultSet, batch_size: int = 2):
+        # data = data.to_dict_list()
+        columns=None
+        cur_size=0
+        events = list()
+        for row in data:
+            if not columns:
+                columns=[field.name for field in data.fields]
+                
+            events.append(row)
+            cur_size += 1
+            
+            if cur_size>=batch_size:
+                yield pd.DataFrame(data=events, columns=columns)
+                cur_size=0
+                events=list()  
+        
+    def get_transaction_events(self):
+        sql="select * from transactions_staging order by received_timestamp, user_id"
+        
+        try:
+            with self.database.snapshot() as db:
+                results=db.execute_sql(sql=sql)
+                yield from self._yield_events(results)
+        except Exception as exc:
+            # import traceback
+            # traceback.print_exception(exc)
+            self.log.error(f'Unable to retrieve data from staging db: {exc}', operation='FetchStagedTransactions')
