@@ -11,7 +11,7 @@ app = FastAPI()
 def health():
     return "Health Check Successful ✅"
 
-@app.get("/user_id/{user_id}")
+@app.get("/api/user_id/{user_id}")
 @performancetracker
 def get_user(user_id: int):
     log = Logger(trace_id=str(uuid4()), operation="GetUser")
@@ -25,7 +25,7 @@ def get_user(user_id: int):
         log.error(f"Failed to fetch user {user_id}: {exc}")
         return "An unexpected error occured. Please try again later"
 
-@app.get("/v2/user_id/{user_id}")
+@app.get("/api/v2/user_id/{user_id}")
 @performancetracker
 def get_user_v2(user_id: int):
     log = Logger(trace_id=str(uuid4()), operation="GetUserV2")
@@ -39,7 +39,7 @@ def get_user_v2(user_id: int):
         log.error(f"Failed to fetch user_v2 {user_id}: {exc}")
         return "An unexpected error occured. Please try again later"
 
-@app.get("/transactions/{user_id}")
+@app.get("/api/transactions/{user_id}")
 @performancetracker
 def get_transactions(user_id: int, limit: int | None = None):
     log = Logger(trace_id=str(uuid4()), operation="GetTransactions")
@@ -50,7 +50,7 @@ def get_transactions(user_id: int, limit: int | None = None):
         log.error(f"Failed to fetch transactions for user {user_id}: {exc}")
         return "An unexpected error occured. Please try again later"
 
-@app.get("/v2/transactions/{user_id}")
+@app.get("/api/v2/transactions/{user_id}")
 @performancetracker
 def get_transactions_v2(user_id: int, limit: int | None = None):
     log = Logger(trace_id=str(uuid4()), operation="GetTransactionsV2")
@@ -60,3 +60,8 @@ def get_transactions_v2(user_id: int, limit: int | None = None):
     except Exception as exc:
         log.error(f"Failed to fetch transactions_v2 for user {user_id}: {exc}")
         return "An unexpected error occured. Please try again later"
+
+@app.post("/api/v1/process/")
+@performancetracker
+def process(data: dict|None = None):
+    pass
