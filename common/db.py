@@ -1,56 +1,69 @@
 import os
 import pandas as pd
+
 from uuid import uuid4
 from typing import TypeVar
 from pydantic import BaseModel,ValidationError
 from collections.abc import Iterator
+
 from google.cloud import spanner
 from google.cloud.spanner_v1.streamed import StreamedResultSet
 from google.cloud.spanner_v1.pool import BurstyPool
+
 from common.logger import Logger
 from common.models.user import User, UserV2
 from common.models.transaction import Transaction, TransactionV2
+from common.exceptions import InvalidSQLTransaction
+from common.responses import SuccessResponse, FailureResponse
 
+
+# Read GCP / Spanner configurations from environment variables
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+STORE_INSTANCE_ID = os.getenv("SPANNER_STORE_INSTANCE_ID")
+STORE_DATABASE_ID = os.getenv("SPANNER_STORE_DATABASE_ID")
+
+STAGING_INSTANCE_ID = os.getenv("SPANNER_STAGING_INSTANCE_ID")
+STAGING_DATABASE_ID = os.getenv("SPANNER_STAGING_DATABASE_ID")
 
 # Initialize Once when module loads
-client=spanner.Client(project='mini-banking')
-database_instance=client.instance(instance_id='store-db-instance')
-_database=database_instance.database(database_id='store-db')
+client = spanner.Client(project=GCP_PROJECT_ID)
+database_instance = client.instance(instance_id=STORE_INSTANCE_ID)
+_database = database_instance.database(database_id=STORE_DATABASE_ID)
 
 # Create a pool of SpannerStagingInstances
-_pool=BurstyPool(target_size=10)
-staging_database_instance=client.instance(instance_id='staging-instance')
-_staging_database=staging_database_instance.database(database_id='staging-db', pool=_pool)
+_pool = BurstyPool(target_size=10)
+staging_database_instance = client.instance(instance_id=STAGING_INSTANCE_ID)
+_staging_database = staging_database_instance.database(database_id=STAGING_DATABASE_ID, pool=_pool)
 
 
 class StoreSpannerExecutorSingleton:
-    def __init__(self,log:Logger):
-        self.log = log
+    def __init__(self,logger:Logger):
+        self.logger = logger
         self.database = _database
 
     def _yield_response_payload(self,model_class:type[BaseModel],data:StreamedResultSet) -> Iterator[BaseModel]:
         # keys = model_class.model_fields.keys()
-        # self.log.debug(keys,check='Attrs')
+        # self.logger.debug(keys,check="Attrs")
         col_names = None
         for row in data:
             if not col_names:
                 col_names = [field.name for field in data.fields]
             row_dict = dict(zip(col_names, row))
-            # self.log.debug(row_dict,check='Values')
+            # self.logger.debug(row_dict,check="Values")
             item = model_class.model_validate(row_dict)
             yield item
 
-    T = TypeVar('T')
+    T = TypeVar("T")
 
     def _yield_response_payload_v2(self,model_class:type[T],data:StreamedResultSet) -> Iterator[T]:
         # keys = model_class.__slots__
-        # self.log.debug(keys,check='AttrsV2')
+        # self.logger.debug(keys,check="AttrsV2")
         col_names = None
         for row in data:
             if not col_names:
                 col_names = [field.name for field in data.fields]
             row_dict = dict(zip(col_names, row))
-            # self.log.debug(row_dict,check='ValuesV2')
+            # self.logger.debug(row_dict,check="ValuesV2")
             item = model_class(**row_dict)
             yield item        
 
@@ -63,8 +76,8 @@ class StoreSpannerExecutorSingleton:
                 results=db.execute_sql(sql=sql,params=params,param_types=param_types)
                 yield from self._yield_response_payload(User,results)
         except Exception as exc:
-            self.log.error(f'Unable to retrieve data : {exc}', operation='FetchUser')
-            raise
+            self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchUser")
+            raise InvalidSQLTransaction(msg=exc)
 
     def user_v2(self, user_id:int) -> Iterator[UserV2]:
         sql="select * from users where user_id = @user_id"
@@ -75,8 +88,8 @@ class StoreSpannerExecutorSingleton:
                 results=db.execute_sql(sql=sql,params=params,param_types=param_types)
                 yield from self._yield_response_payload_v2(UserV2,results)
         except Exception as exc:
-            self.log.error(f'Unable to retrieve data : {exc}', operation='FetchUserV2')
-            raise
+            self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchUserV2")
+            raise InvalidSQLTransaction(msg=exc)
 
     def transactions(self, user_id:int, limit: int|None) -> Iterator[Transaction]:
         sql="select * from transactions where user_id = @user_id order by transaction_timestamp"
@@ -84,15 +97,15 @@ class StoreSpannerExecutorSingleton:
         param_types={"user_id":spanner.param_types.INT64}
         if limit is not None:
             sql += " LIMIT @limit"
-            params['limit'] = limit
-            param_types['limit'] = spanner.param_types.INT64
+            params["limit"] = limit
+            param_types["limit"] = spanner.param_types.INT64
         try:
             with self.database.snapshot() as db:
                 results=db.execute_sql(sql=sql,params=params,param_types=param_types)
                 yield from self._yield_response_payload(Transaction,results)
         except Exception as exc:
-            self.log.error(f'Unable to retrieve data : {exc}', operation='FetchTransactions')
-            raise
+            self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchTransactions")
+            raise InvalidSQLTransaction(msg=exc)
 
     def transactions_v2(self, user_id:int, limit: int|None) -> Iterator[TransactionV2]:
         sql="select * from transactions where user_id = @user_id order by transaction_timestamp"
@@ -100,22 +113,41 @@ class StoreSpannerExecutorSingleton:
         param_types={"user_id":spanner.param_types.INT64}
         if limit is not None:
             sql += " LIMIT @limit"
-            params['limit'] = limit
-            param_types['limit'] = spanner.param_types.INT64
+            params["limit"] = limit
+            param_types["limit"] = spanner.param_types.INT64
         try:
             with self.database.snapshot() as db:
                 results=db.execute_sql(sql=sql,params=params,param_types=param_types)
                 yield from self._yield_response_payload_v2(TransactionV2,results)
         except Exception as exc:
-            self.log.error(f'Unable to retrieve data : {exc}', operation='FetchTransactionsV2')
-            raise
+            self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchTransactionsV2")
+            raise InvalidSQLTransaction(msg=exc)
+
+    def update(self, sql: str, params: dict|None = None, param_types: dict|None = None):
+        if not sql:
+            self.logger.info("Nothing to run", operation="ExecuteSQL")
+            return
+        if params:
+            if not param_types:
+                self.logger.error("Param Types have to be defined if params is passed", operation="ExecuteSQL:StoreDb")
+                raise InvalidSQLTransaction(msg="Param Types not passed")
+            if not set(params).issubset(set(param_types)):
+                self.logger.error("Param Types missing: ",set(params)-set(param_types), operation="ExecuteSQL:StoreDb")
+                raise InvalidSQLTransaction(msg="Param Types missing")
+        try:
+            self.database.run_in_transaction(lambda txn: txn.execute_update(dml=sql, params=params, param_types=param_types))
+            self.logger.info(f"Executing sql: {sql}, params: {params}, param_types: {param_types}", operation="ExecuteSQL:StoreDb")
+            return SuccessResponse(msg="Sql executed successfully")
+        except Exception as exc:
+            self.logger.error("Unable to process sql transaction",exc,operation="ExecuteSQL:StoreDb")
+            return FailureResponse(msg="Unable to process sql transaction "+str(exc))
 
 
 class StagingSpannerExecutorPool:
     _staging_instances = None
 
-    def __init__(self,log:Logger):
-        self.log = log
+    def __init__(self,logger:Logger):
+        self.logger = logger
         self.database = _staging_database
 
     def _yield_events(self, data: StreamedResultSet, batch_size: int = 2):
@@ -137,7 +169,6 @@ class StagingSpannerExecutorPool:
         
     def get_transaction_events(self):
         sql="select * from transactions_staging order by received_timestamp, user_id"
-        
         try:
             with self.database.snapshot() as db:
                 results=db.execute_sql(sql=sql)
@@ -145,4 +176,23 @@ class StagingSpannerExecutorPool:
         except Exception as exc:
             # import traceback
             # traceback.print_exception(exc)
-            self.log.error(f'Unable to retrieve data from staging db: {exc}', operation='FetchStagedTransactions')
+            self.logger.error(f"Unable to retrieve data from staging db: {exc}", operation="FetchStagedTransactions")
+    
+    def update(self, sql: str, params: dict|None = None, param_types: dict|None = None):
+        if not sql:
+            self.logger.info("Nothing to run", operation="ExecuteSQL")
+            return
+        if params:
+            if not param_types:
+                self.logger.error("Param Types have to be defined if params is passed", operation="ExecuteSQL:StagingDb")
+                raise InvalidSQLTransaction(msg="Param Types not passed")
+            if not set(params).issubset(set(param_types)):
+                self.logger.error("Param Types missing: ",set(params)-set(param_types), operation="ExecuteSQL:StagingDb")
+                raise InvalidSQLTransaction(msg="Param Types missing")
+        try:
+            self.database.run_in_transaction(lambda txn: txn.execute_update(dml=sql, params=params, param_types=param_types))
+            self.logger.info(f"Executing sql: {sql}, params: {params}, param_types: {param_types}", operation="ExecuteSQL:StagingDb")
+            return SuccessResponse(msg="Sql executed successfully")
+        except Exception as exc:
+            self.logger.error("Unable to proxess sql transaction",exc,operation="ExecuteSQL:StagingDb")
+            return FailureResponse(msg="Unable to process sql transaction"+str(exc))
