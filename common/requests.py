@@ -3,6 +3,7 @@ import requests
 from dataclasses import dataclass, field
 
 from common.logger import Logger
+from common.response import SuccessResponse, FailureResponse
 
 @dataclass(slots=True)
 class ExternalRequestHandler:
@@ -18,7 +19,8 @@ class ExternalRequestHandler:
                 headers = {"Content-Type": "application/json"}
                 )
             resp.raise_for_status()  # Raises HTTPError for 4xx/5xx status codes (e.g., 404 Not Found)
-            return resp
+            self.logger.info(f"Post to {url} successful with data: {data}")
+            return SuccessResponse(msg="Post Successful", operation="ExternalEventHandler")
         except Exception as exc:
             self.logger.error(f"Failed to post to url '{url}': {exc}", operation="ExternalEventHandler")
-            raise
+            return FailureResponse(msg=exc)
