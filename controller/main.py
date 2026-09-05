@@ -7,6 +7,7 @@ from common.logger import Logger
 from common.config import config, Config
 from common.db import StagingSpannerExecutorPool
 from common.requests import ExternalRequestHandler
+from common.response import SuccessResponse, FailureResponse
 
 
 @dataclass(slots=True)
@@ -31,7 +32,11 @@ class EventsProcessor:
     def batch_process_events(self, events: pd.DataFrame):
         for event in events.to_dict(orient="records"):
             self._preprocess(event)
-            self.external_request_handler.post(url=self.config.processor_url, data=event)
+            try:
+                return self.external_request_handler.post(url=self.config.processor_url, data=event)
+            except Exception as exc:
+                self.logger.error(f"Unable to process event : {exc}")
+                return FailureResponse("Unable to post event")
 
     # Fetch staged events
     def consume_events(self):
