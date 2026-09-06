@@ -35,6 +35,9 @@ _pool = BurstyPool(target_size=10)
 staging_database_instance = client.instance(instance_id=STAGING_INSTANCE_ID)
 _staging_database = staging_database_instance.database(database_id=STAGING_DATABASE_ID, pool=_pool)
 
+# Add BATCh_SIZE - defines number of events fetched at once
+BATCH_SIZE = 1000
+
 
 class StoreSpannerExecutorSingleton:
     def __init__(self,logger:Logger):
@@ -150,7 +153,7 @@ class StagingSpannerExecutorPool:
         self.logger = logger
         self.database = _staging_database
 
-    def _yield_events(self, data: StreamedResultSet, batch_size: int = 2):
+    def _yield_events(self, data: StreamedResultSet, batch_size: int = BATCH_SIZE):
         # data = data.to_dict_list()
         columns = None
         cur_size = 0

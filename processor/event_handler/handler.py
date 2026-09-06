@@ -2,6 +2,7 @@ import importlib
 import traceback
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from google.cloud.spanner_v1 import param_types
 
@@ -10,6 +11,12 @@ from common.config import config, Config
 from common.db import StoreSpannerExecutorSingleton, StagingSpannerExecutorPool
 from common.responses import SuccessResponse, FailureResponse, ActionNotRequired
 from common.exceptions import InvalidTransactionEvent, InvalidSQLTransaction
+
+
+UPDATE_TRANSACTION_SQL = """
+INSERT INTO transactions (user_id, transaction_id, transaction_type, amount, from_user, transaction_timestamp)
+VALUES (@user_id, @transaction_id, @transaction_type, @amount, @from_user, @transaction_timestamp)
+"""
 
 
 @dataclass(slots=True)
@@ -39,7 +46,7 @@ class Credit:
 
     def handle(self, user: User, credit_amount: float, trace_id:str, transaction_id: str):
         sql="""
-        UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id where user_id=@user_id
+        UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id WHERE user_id=@user_id
         """
         store_db_params={
         "balance": user.balance+credit_amount,
@@ -51,8 +58,26 @@ class Credit:
             "last_transaction_id": param_types.STRING,
             "user_id": param_types.INT64
         }
+        raw_ts = self.event.get("transaction_timestamp")
+        tx_ts = datetime.fromisoformat(raw_ts) if isinstance(raw_ts, str) else raw_ts
+        tx_params = {
+            "user_id": user.user_id,
+            "transaction_id": transaction_id,
+            "transaction_type": "CREDIT",
+            "amount": float(credit_amount),
+            "from_user": None,
+            "transaction_timestamp": tx_ts
+        }
+        tx_param_types = {
+            "user_id": param_types.INT64,
+            "transaction_id": param_types.STRING,
+            "transaction_type": param_types.STRING,
+            "amount": param_types.FLOAT64,
+            "from_user": param_types.INT64,
+            "transaction_timestamp": param_types.TIMESTAMP
+        }
         staging_sql="""
-        UPDATE transactions_staging SET status=@status where trace_id=@trace_id
+        UPDATE transactions_staging SET status=@status WHERE trace_id=@trace_id
         """
         staging_params={
             "status": 3,
@@ -65,10 +90,13 @@ class Credit:
         try:
             resp=self.db_executor.update(sql=sql, params=store_db_params, param_types=store_db_param_types)
             if isinstance(resp, SuccessResponse):
-                staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
-                if isinstance(staging_resp, SuccessResponse):
-                    return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-                return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                tx_resp=self.db_executor.update(sql=UPDATE_TRANSACTION_SQL, params=tx_params, param_types=tx_param_types)
+                if isinstance(tx_resp, SuccessResponse):
+                    staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
+                    if isinstance(staging_resp, SuccessResponse):
+                        return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                    return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                return FailureResponse(msg=f"Failed inserting transaction record. Tx executor resp: {tx_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
             # Mark event failed, revert store db state
             store_db_params["balance"]=user.balance
             store_db_params["last_transaction_id"]=user.last_transaction_id
@@ -152,7 +180,7 @@ class Debit:
 
     def handle(self, user: User, debit_amount: float, trace_id:str, transaction_id: str):
         sql="""
-        UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id where user_id=@user_id
+        UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id WHERE user_id=@user_id
         """
         store_db_params={
         "balance": user.balance-debit_amount,
@@ -164,8 +192,26 @@ class Debit:
             "last_transaction_id": param_types.STRING,
             "user_id": param_types.INT64
         }
+        raw_ts = self.event.get("transaction_timestamp")
+        tx_ts = datetime.fromisoformat(raw_ts) if isinstance(raw_ts, str) else raw_ts
+        tx_params = {
+            "user_id": user.user_id,
+            "transaction_id": transaction_id,
+            "transaction_type": "DEBIT",
+            "amount": float(debit_amount),
+            "from_user": None,
+            "transaction_timestamp": tx_ts
+        }
+        tx_param_types = {
+            "user_id": param_types.INT64,
+            "transaction_id": param_types.STRING,
+            "transaction_type": param_types.STRING,
+            "amount": param_types.FLOAT64,
+            "from_user": param_types.INT64,
+            "transaction_timestamp": param_types.TIMESTAMP
+        }
         staging_sql="""
-        UPDATE transactions_staging SET status=@status where trace_id=@trace_id
+        UPDATE transactions_staging SET status=@status WHERE trace_id=@trace_id
         """
         staging_params={
             "status": 3,
@@ -178,10 +224,13 @@ class Debit:
         try:
             resp=self.db_executor.update(sql=sql, params=store_db_params, param_types=store_db_param_types)
             if isinstance(resp, SuccessResponse):
-                staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
-                if isinstance(staging_resp, SuccessResponse):
-                    return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-                return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                tx_resp=self.db_executor.update(sql=UPDATE_TRANSACTION_SQL, params=tx_params, param_types=tx_param_types)
+                if isinstance(tx_resp, SuccessResponse):
+                    staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
+                    if isinstance(staging_resp, SuccessResponse):
+                        return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                    return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                return FailureResponse(msg=f"Failed inserting transaction record. Tx executor resp: {tx_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
             # Mark event failed, revert store db state
             store_db_params["balance"]=user.balance
             store_db_params["last_transaction_id"]=user.last_transaction_id
@@ -269,7 +318,7 @@ class Transfer:
 
     def handle(self, to_user: User, from_user: User, transfer_amount: float, trace_id:str, transaction_id: str):
         to_sql="""
-        UPDATE users SET balance=@to_balance, last_transaction_id=@to_last_transaction_id where user_id=@to_user_id
+        UPDATE users SET balance=@to_balance, last_transaction_id=@to_last_transaction_id WHERE user_id=@to_user_id
         """
         to_params={
         "to_balance": float(to_user.balance+transfer_amount),
@@ -282,7 +331,7 @@ class Transfer:
             "to_user_id": param_types.INT64
         }
         from_sql="""
-        UPDATE users SET balance=@from_balance, last_transaction_id=@from_last_transaction_id where user_id=@from_user_id
+        UPDATE users SET balance=@from_balance, last_transaction_id=@from_last_transaction_id WHERE user_id=@from_user_id
         """
         from_params={
         "from_balance": float(from_user.balance-transfer_amount),
@@ -294,8 +343,26 @@ class Transfer:
             "from_last_transaction_id": param_types.STRING,
             "from_user_id": param_types.INT64
         }
+        raw_ts = self.event.get("transaction_timestamp")
+        tx_ts = datetime.fromisoformat(raw_ts) if isinstance(raw_ts, str) else raw_ts
+        tx_params = {
+            "user_id": to_user.user_id,
+            "transaction_id": transaction_id,
+            "transaction_type": "TRANSFER",
+            "amount": float(transfer_amount),
+            "from_user": from_user.user_id,
+            "transaction_timestamp": tx_ts
+        }
+        tx_param_types = {
+            "user_id": param_types.INT64,
+            "transaction_id": param_types.STRING,
+            "transaction_type": param_types.STRING,
+            "amount": param_types.FLOAT64,
+            "from_user": param_types.INT64,
+            "transaction_timestamp": param_types.TIMESTAMP
+        }
         staging_sql="""
-        UPDATE transactions_staging SET status=@status where trace_id=@trace_id
+        UPDATE transactions_staging SET status=@status WHERE trace_id=@trace_id
         """
         staging_params={
             "status": 3,
@@ -309,10 +376,13 @@ class Transfer:
             to_resp=self.db_executor.update(sql=to_sql, params=to_params, param_types=to_param_types)
             from_resp=self.db_executor.update(sql=from_sql, params=from_params, param_types=from_param_types)
             if isinstance(to_resp, SuccessResponse) and isinstance(from_resp, SuccessResponse):
-                staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
-                if isinstance(staging_resp, SuccessResponse):
-                    return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-                return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                tx_resp=self.db_executor.update(sql=UPDATE_TRANSACTION_SQL, params=tx_params, param_types=tx_param_types)
+                if isinstance(tx_resp, SuccessResponse):
+                    staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
+                    if isinstance(staging_resp, SuccessResponse):
+                        return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                    return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                return FailureResponse(msg=f"Failed inserting transaction record. Tx executor resp: {tx_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
             # Mark event failed, revert store db state
             to_params["to_balance"]=to_user.balance
             to_params["to_last_transaction_id"]=to_user.last_transaction_id
