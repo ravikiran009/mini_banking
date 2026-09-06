@@ -19,8 +19,8 @@ class ExternalRequestHandler:
                 headers = {"Content-Type": "application/json"}
                 )
             resp.raise_for_status()  # Raises HTTPError for 4xx/5xx status codes (e.g., 404 Not Found)
-            self.logger.info(f"Post to {url} successful with data: {data}")
-            return SuccessResponse(msg="Post Successful", operation="ExternalEventHandler")
+            self.logger.info(f"Post to {url} successful with data: {data}", operation="ExternalEventHandler")
+            return SuccessResponse(msg="Post Successful")
         except Exception as exc:
             self.logger.error(f"Failed to post to url '{url}': {exc}", operation="ExternalEventHandler")
             return FailureResponse(msg=exc)
