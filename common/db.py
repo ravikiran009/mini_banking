@@ -155,10 +155,24 @@ class StagingSpannerExecutorPool:
         columns = None
         cur_size = 0
         events = list()
+        failed_transaction_users_set = set()
         for row in data:
             if not columns:
                 columns = [field.name for field in data.fields]
-                
+                user_id_idx   = columns.index("user_id")
+                status_idx    = columns.index("status")
+                from_user_idx = columns.index("from_user")
+            user_id = row[user_id_idx]
+            status  = row[status_idx]
+            from_user  = row[from_user_idx]
+            if status==4:
+                failed_transaction_users_set.add(user_id)
+                if not from_user:
+                    failed_transaction_users_set.add(from_user)
+
+            if user_id in failed_transaction_users_set or from_user in failed_transaction_users_set:
+                continue
+
             events.append(row)
             cur_size += 1
             
@@ -181,7 +195,8 @@ class StagingSpannerExecutorPool:
             yield df
         
     def get_transaction_events(self):
-        sql="select * from transactions_staging order by received_timestamp, user_id"
+        # Status=3 -> Successful, Status=1 -> Yet to Process, Status=4 -> Failed
+        sql="select * from transactions_staging where status<>3 order by received_timestamp, user_id"
         try:
             with self.database.snapshot() as db:
                 results=db.execute_sql(sql=sql)
