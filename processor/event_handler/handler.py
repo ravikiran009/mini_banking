@@ -31,7 +31,6 @@ def mark_staging_status(staging_db_executor: StagingSpannerExecutorPool, trace_i
     staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
 
 
-
 @dataclass(slots=True)
 class Credit:
     logger: Logger

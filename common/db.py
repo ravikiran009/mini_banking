@@ -140,7 +140,7 @@ class StoreSpannerExecutorSingleton:
         try:
             self.database.run_in_transaction(lambda txn: txn.execute_update(dml=sql, params=params, param_types=param_types))
             # self.logger.info(f"Executing sql: {sql}, params: {params}, param_types: {param_types}", operation="ExecuteSQL:StoreDb")
-            self.logger.info(f"Params: {params}", operation="ExecuteSQL:StagingDb")
+            self.logger.info(f"Params: {params}", operation="ExecuteSQL:StoreDb")
             return SuccessResponse(msg="Sql executed successfully")
         except Exception as exc:
             self.logger.error("Unable to process sql transaction",exc,operation="ExecuteSQL:StoreDb")
