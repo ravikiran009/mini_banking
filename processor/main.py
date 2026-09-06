@@ -1,8 +1,11 @@
 from uuid import uuid4
 from fastapi import FastAPI
+
 from common.db import StoreSpannerExecutorSingleton
 from common.logger import Logger
 from common.utils import performancetracker
+
+from event_handler.handler import TransactionProcessor
 
 app = FastAPI()
 
@@ -64,4 +67,11 @@ def get_transactions_v2(user_id: int, limit: int | None = None):
 @app.post("/api/v1/process/")
 @performancetracker
 def process(data: dict|None = None):
-    pass
+    log = Logger(trace_id=str(uuid4()), operation="ProcessEvents")
+    try:
+        processor=TransactionProcessor(logger=log, event=data)
+        resp=processor.process()
+        return resp
+    except Exception as exc:
+        log.error(f"Failed to process event Trace_id: {(data or {}).get('trace_id')}, Transaction_Id: {(data or {}).get('transaction_id')}")
+        return "An unexpected error occured. Please try again later"
