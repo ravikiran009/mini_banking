@@ -77,7 +77,7 @@ class StoreSpannerExecutorSingleton:
                 yield from self._yield_response_payload(User,results)
         except Exception as exc:
             self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchUser")
-            raise InvalidSQLTransaction(msg=exc)
+            raise InvalidSQLTransaction(msg=str(exc))
 
     def user_v2(self, user_id:int) -> Iterator[UserV2]:
         sql="select * from users where user_id = @user_id"
@@ -89,7 +89,7 @@ class StoreSpannerExecutorSingleton:
                 yield from self._yield_response_payload_v2(UserV2,results)
         except Exception as exc:
             self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchUserV2")
-            raise InvalidSQLTransaction(msg=exc)
+            raise InvalidSQLTransaction(msg=str(exc))
 
     def transactions(self, user_id:int, limit: int|None) -> Iterator[Transaction]:
         sql="select * from transactions where user_id = @user_id order by transaction_timestamp"
@@ -105,7 +105,7 @@ class StoreSpannerExecutorSingleton:
                 yield from self._yield_response_payload(Transaction,results)
         except Exception as exc:
             self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchTransactions")
-            raise InvalidSQLTransaction(msg=exc)
+            raise InvalidSQLTransaction(msg=str(exc))
 
     def transactions_v2(self, user_id:int, limit: int|None) -> Iterator[TransactionV2]:
         sql="select * from transactions where user_id = @user_id order by transaction_timestamp"
@@ -121,7 +121,7 @@ class StoreSpannerExecutorSingleton:
                 yield from self._yield_response_payload_v2(TransactionV2,results)
         except Exception as exc:
             self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchTransactionsV2")
-            raise InvalidSQLTransaction(msg=exc)
+            raise InvalidSQLTransaction(msg=str(exc))
 
     def update(self, sql: str, params: dict|None = None, param_types: dict|None = None):
         if not sql:
@@ -152,20 +152,33 @@ class StagingSpannerExecutorPool:
 
     def _yield_events(self, data: StreamedResultSet, batch_size: int = 2):
         # data = data.to_dict_list()
-        columns=None
-        cur_size=0
+        columns = None
+        cur_size = 0
         events = list()
         for row in data:
             if not columns:
-                columns=[field.name for field in data.fields]
+                columns = [field.name for field in data.fields]
                 
             events.append(row)
             cur_size += 1
             
-            if cur_size>=batch_size:
-                yield pd.DataFrame(data=events, columns=columns)
-                cur_size=0
-                events=list()  
+            if cur_size >= batch_size:
+                df = pd.DataFrame(data=events, columns=columns)
+                if "from_user" in df.columns:
+                    df["from_user"] = df["from_user"].astype("Int64")
+                if "user_id" in df.columns:
+                    df["user_id"] = df["user_id"].astype("Int64")
+                yield df
+                cur_size = 0
+                events = list()
+        
+        if events:
+            df = pd.DataFrame(data=events, columns=columns)
+            if "from_user" in df.columns:
+                df["from_user"] = df["from_user"].astype("Int64")
+            if "user_id" in df.columns:
+                df["user_id"] = df["user_id"].astype("Int64")
+            yield df
         
     def get_transaction_events(self):
         sql="select * from transactions_staging order by received_timestamp, user_id"
