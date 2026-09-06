@@ -4,3 +4,4 @@ cover/*
 *.md
 Dockerfile
 .vscode/*
+processor/tests/*.txt
