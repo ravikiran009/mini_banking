@@ -19,6 +19,19 @@ VALUES (@user_id, @transaction_id, @transaction_type, @amount, @from_user, @tran
 """
 
 
+def mark_staging_status(staging_db_executor: StagingSpannerExecutorPool, trace_id: str, status: int):
+    if not trace_id:
+        return
+    staging_sql = "UPDATE transactions_staging SET status=@status WHERE trace_id=@trace_id"
+    staging_params = {"status": status, "trace_id": trace_id}
+    staging_param_types = {
+        "status": param_types.INT64,
+        "trace_id": param_types.STRING
+    }
+    staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
+
+
+
 @dataclass(slots=True)
 class Credit:
     logger: Logger
@@ -119,18 +132,23 @@ class Credit:
         try:
             resp_object = self._validate(user_id=user_id, amount=credit_amount)
             if isinstance(resp_object, FailureResponse):
+                mark_staging_status(self.staging_db_executor, trace_id, 5)
                 return resp_object
         except InvalidSQLTransaction as exc:
+            mark_staging_status(self.staging_db_executor, trace_id, 4)
             return FailureResponse(msg=exc.msg)
         except InvalidTransactionEvent as exc:
             self.logger.error("Unable to validate event because of invalid request submission: ", exc.msg)
+            mark_staging_status(self.staging_db_executor, trace_id, 5)
             return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=422)
         except Exception as exc:
-            self.logger.error("Unable to validate event: ", exc)
-            return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=422)
+            self.logger.error("Unexpected error during event validation: ", exc)
+            mark_staging_status(self.staging_db_executor, trace_id, 4)
+            return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=500)
         self.logger.info(f"Credit event {transaction_id} validated successfully")
         if isinstance(resp_object, ActionNotRequired):
             self.logger.info(f"Credit event {transaction_id} no need to process")
+            mark_staging_status(self.staging_db_executor, trace_id, 3)
             return SuccessResponse(
                 msg="Event is successfully processed", 
                 resp={
@@ -253,18 +271,23 @@ class Debit:
         try:
             resp_object = self._validate(user_id=user_id, amount=debit_amount)
             if isinstance(resp_object, FailureResponse):
+                mark_staging_status(self.staging_db_executor, trace_id, 5)
                 return resp_object
         except InvalidSQLTransaction as exc:
+            mark_staging_status(self.staging_db_executor, trace_id, 4)
             return FailureResponse(msg=exc.msg)
         except InvalidTransactionEvent as exc:
             self.logger.error("Unable to validate event because of invalid request submission: ", exc.msg)
+            mark_staging_status(self.staging_db_executor, trace_id, 5)
             return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=422)
         except Exception as exc:
-            self.logger.error("Unable to validate event: ", exc)
-            return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=422)
+            self.logger.error("Unexpected error during event validation: ", exc)
+            mark_staging_status(self.staging_db_executor, trace_id, 4)
+            return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=500)
         self.logger.info(f"Debit event {transaction_id} validated successfully")
         if isinstance(resp_object, ActionNotRequired):
             self.logger.info(f"Debit event {transaction_id} no need to process")
+            mark_staging_status(self.staging_db_executor, trace_id, 3)
             return SuccessResponse(
                 msg="Event is successfully processed", 
                 resp={
@@ -409,18 +432,23 @@ class Transfer:
         try:
             resp_object = self._validate(user_id=user_id, from_user_id=from_user_id, amount=transfer_amount)
             if isinstance(resp_object, FailureResponse):
+                mark_staging_status(self.staging_db_executor, trace_id, 5)
                 return resp_object
         except InvalidSQLTransaction as exc:
+            mark_staging_status(self.staging_db_executor, trace_id, 4)
             return FailureResponse(msg=exc.msg)
         except InvalidTransactionEvent as exc:
             self.logger.error("Unable to validate event because of invalid request submission: ", exc.msg)
+            mark_staging_status(self.staging_db_executor, trace_id, 5)
             return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=422)
         except Exception as exc:
-            self.logger.error("Unable to validate event: ", exc)
-            return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=422)
+            self.logger.error("Unexpected error during event validation: ", exc)
+            mark_staging_status(self.staging_db_executor, trace_id, 4)
+            return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=500)
         self.logger.info(f"Transfer event {transaction_id} validated successfully")
         if isinstance(resp_object, ActionNotRequired):
             self.logger.info(f"Transfer event {transaction_id} no need to process")
+            mark_staging_status(self.staging_db_executor, trace_id, 3)
             return SuccessResponse(
                 msg="Event is successfully processed", 
                 resp={
@@ -470,6 +498,8 @@ class TransactionProcessor:
             handler_resp=event_handler.process()
             return handler_resp
         except InvalidTransactionEvent as exc:
+            mark_staging_status(StagingSpannerExecutorPool(self.logger), (self.event or {}).get("trace_id"), 5)
             return FailureResponse(msg="TransactionProcessor failed"+"$$$"+str(exc.msg)+"$$$"+traceback.format_exc().replace("\n","$$$"))
         except Exception as exc:
+            mark_staging_status(StagingSpannerExecutorPool(self.logger), (self.event or {}).get("trace_id"), 4)
             return FailureResponse(msg="TransactionProcessor failed"+"$$$"+str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"))

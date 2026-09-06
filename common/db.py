@@ -202,8 +202,8 @@ class StagingSpannerExecutorPool:
             yield df
         
     def get_transaction_events(self):
-        # Status=3 -> Successful, Status=1 -> Yet to Process, Status=4 -> Failed
-        sql="select * from transactions_staging where status<>3 order by received_timestamp, user_id"
+        # Status=1 -> Yet to Process, Status=3 -> Successful, Status=4 -> Failed (Critical/Blocked), Status=5 -> Rejected (Validation Error)
+        sql="select * from transactions_staging where status <> 3 and status <> 5 order by received_timestamp, user_id"
         try:
             with self.database.snapshot() as db:
                 results=db.execute_sql(sql=sql)
