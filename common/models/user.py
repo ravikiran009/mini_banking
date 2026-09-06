@@ -9,7 +9,7 @@ class User(BaseModel) :
 
     user_id : int = Field(alias = 'UserId')
     account_id : str = Field(alias = 'AccountId')
-    balance : int = Field(alias = 'Balance')
+    balance : float = Field(alias = 'Balance')
     last_transaction_id : str | None = Field(default=None, alias = 'LastTransactionId')
 
 
@@ -17,5 +17,5 @@ class User(BaseModel) :
 class UserV2:
     user_id : int
     account_id : str
-    balance : int
+    balance : float
     last_transaction_id : str | None = None
