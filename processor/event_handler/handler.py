@@ -461,7 +461,7 @@ class TransactionProcessor:
             txn_type = self.event.get("transaction_type").title()
             event_handler_cls = HANDLERS.get(txn_type)
             if not self.event.get("user_id") or not self.event.get("trace_id") or not self.event.get("transaction_id") or not self.event.get("amount"):
-                msg="Invalid transaction - event details found"
+                msg="Invalid transaction - missing required event details"
                 raise InvalidTransactionEvent(msg=msg)
             if not event_handler_cls:
                 msg=f"{txn_type} is not allowed, Allowed types: {tuple(HANDLERS.keys())}"
