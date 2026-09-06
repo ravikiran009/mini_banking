@@ -7,7 +7,7 @@ from common.logger import Logger
 from common.config import config, Config
 from common.db import StagingSpannerExecutorPool
 from common.requests import ExternalRequestHandler
-from common.response import SuccessResponse, FailureResponse
+from common.responses import SuccessResponse, FailureResponse
 
 
 @dataclass(slots=True)
@@ -33,10 +33,13 @@ class EventsProcessor:
         for event in events.to_dict(orient="records"):
             self._preprocess(event)
             try:
-                return self.external_request_handler.post(url=self.config.processor_url, data=event)
+                resp = self.external_request_handler.post(url=self.config.processor_url, data=event)
+                if isinstance(resp, FailureResponse):
+                    self.logger.error(f"Failed to post event trace_id={event.get('trace_id')}: {resp.msg}")
             except Exception as exc:
                 self.logger.error(f"Unable to process event : {exc}")
-                return FailureResponse("Unable to post event")
+                return FailureResponse(msg=f"Unable to post event: {exc}")
+        return SuccessResponse(msg="BatchProcess events completed")
 
     # Fetch staged events
     def consume_events(self):

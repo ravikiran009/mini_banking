@@ -3,7 +3,7 @@ import requests
 from dataclasses import dataclass, field
 
 from common.logger import Logger
-from common.response import SuccessResponse, FailureResponse
+from common.responses import SuccessResponse, FailureResponse
 
 @dataclass(slots=True)
 class ExternalRequestHandler:
