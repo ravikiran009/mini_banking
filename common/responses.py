@@ -15,6 +15,10 @@ class FailureResponse:
     msg: str = field(default="Request submission Failed")
     status_code: int = field(default=400)
 
+    def __post_init__(self):
+        if not isinstance(self.msg, str):
+            self.msg = str(self.msg)
+
 
 @dataclass(slots=True)
 class ActionNotRequired:
