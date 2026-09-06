@@ -166,13 +166,13 @@ class StagingSpannerExecutorPool:
             status  = row[status_idx]
             from_user  = row[from_user_idx]
             if status == 4:
-                if user_id is not None and not pd.isna(user_id):
+                if user_id is not None:
                     failed_transaction_users_set.add(user_id)
-                if from_user is not None and not pd.isna(from_user):
+                if from_user is not None:
                     failed_transaction_users_set.add(from_user)
 
             user_blocked = (user_id is not None and user_id in failed_transaction_users_set)
-            from_user_blocked = (from_user is not None and not pd.isna(from_user) and from_user in failed_transaction_users_set)
+            from_user_blocked = (from_user is not None and from_user in failed_transaction_users_set)
 
             if user_blocked or from_user_blocked:
                 continue
