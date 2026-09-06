@@ -5,7 +5,7 @@ from common.db import StoreSpannerExecutorSingleton
 from common.logger import Logger
 from common.utils import performancetracker
 
-from event_handler.handler import TransactionProcessor
+from processor.event_handler.handler import TransactionProcessor
 
 app = FastAPI()
 
