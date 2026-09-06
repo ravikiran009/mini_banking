@@ -5,7 +5,7 @@ from datetime import datetime
 
 from common.logger import Logger
 from common.config import config, Config
-from common.db import StagingSpannerExecutorPool
+from common.db import StagingSpannerExecutorPool, BATCH_SIZE
 from common.requests import ExternalRequestHandler
 from common.responses import SuccessResponse, FailureResponse
 
@@ -45,5 +45,11 @@ class EventsProcessor:
     def consume_events(self):
         stg_pool = StagingSpannerExecutorPool(self.logger)
 
+        batches_processed = 0
         for events in stg_pool.get_transaction_events():
             self.batch_process_events(events)
+            batches_processed += 1
+            if batches_processed%BATCH_SIZE == 0:
+                self.logger.info("Number of batches processed: ", batches_processed)
+        
+        self.logger.info("Number of batches processed: ", batches_processed)
