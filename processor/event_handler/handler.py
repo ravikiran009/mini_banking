@@ -39,7 +39,7 @@ class Credit:
 
     def handle(self, user: User, credit_amount: float, trace_id:str, transaction_id: str):
         sql="""
-        UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id where user_id=@user_id;
+        UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id where user_id=@user_id
         """
         store_db_params={
         "balance": user.balance+credit_amount,
@@ -52,7 +52,7 @@ class Credit:
             "user_id": param_types.INT64
         }
         staging_sql="""
-        UPDATE transactions_staging SET status=@status where trace_id=@trace_id;
+        UPDATE transactions_staging SET status=@status where trace_id=@trace_id
         """
         staging_params={
             "status": 3,
@@ -152,7 +152,7 @@ class Debit:
 
     def handle(self, user: User, debit_amount: float, trace_id:str, transaction_id: str):
         sql="""
-        UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id where user_id=@user_id;
+        UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id where user_id=@user_id
         """
         store_db_params={
         "balance": user.balance-debit_amount,
@@ -165,7 +165,7 @@ class Debit:
             "user_id": param_types.INT64
         }
         staging_sql="""
-        UPDATE transactions_staging SET status=@status where trace_id=@trace_id;
+        UPDATE transactions_staging SET status=@status where trace_id=@trace_id
         """
         staging_params={
             "status": 3,
@@ -269,7 +269,7 @@ class Transfer:
 
     def handle(self, to_user: User, from_user: User, transfer_amount: float, trace_id:str, transaction_id: str):
         to_sql="""
-        UPDATE users SET balance=@to_balance, last_transaction_id=@to_last_transaction_id where user_id=@to_user_id;
+        UPDATE users SET balance=@to_balance, last_transaction_id=@to_last_transaction_id where user_id=@to_user_id
         """
         to_params={
         "to_balance": float(to_user.balance+transfer_amount),
@@ -282,7 +282,7 @@ class Transfer:
             "to_user_id": param_types.INT64
         }
         from_sql="""
-        UPDATE users SET balance=@from_balance, last_transaction_id=@from_last_transaction_id where user_id=@from_user_id;
+        UPDATE users SET balance=@from_balance, last_transaction_id=@from_last_transaction_id where user_id=@from_user_id
         """
         from_params={
         "from_balance": float(from_user.balance-transfer_amount),
@@ -295,7 +295,7 @@ class Transfer:
             "from_user_id": param_types.INT64
         }
         staging_sql="""
-        UPDATE transactions_staging SET status=@status where trace_id=@trace_id;
+        UPDATE transactions_staging SET status=@status where trace_id=@trace_id
         """
         staging_params={
             "status": 3,
@@ -322,7 +322,7 @@ class Transfer:
             to_resp=self.db_executor.update(sql=to_sql, params=to_params, param_types=to_param_types)
             from_resp=self.db_executor.update(sql=from_sql, params=from_params, param_types=from_param_types)
             staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
-            return FailureResponse(msg=f"Failed processing transaction at store db level. Store executor resp: {resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+            return FailureResponse(msg=f"Failed processing transaction at store db level. Store executor to_resp: {to_resp.msg}, from_resp: {from_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
         except InvalidSQLTransaction as exc:
             return FailureResponse(msg=exc.msg+"$$$"+traceback.format_exc().replace("\n","$$$"))
         except Exception as exc:
