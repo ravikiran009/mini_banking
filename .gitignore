@@ -5,3 +5,4 @@ cover/*
 Dockerfile
 .vscode/*
 processor/tests/*.txt
+*.ps1
