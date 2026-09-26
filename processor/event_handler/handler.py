@@ -9,6 +9,7 @@ from google.cloud.spanner_v1 import param_types
 from common.logger import Logger 
 from common.config import config, Config
 from common.db import StoreSpannerExecutorSingleton, StagingSpannerExecutorPool
+from common.models.user import UserV2
 from common.responses import SuccessResponse, FailureResponse, ActionNotRequired
 from common.exceptions import InvalidTransactionEvent, InvalidSQLTransaction
 
@@ -44,7 +45,7 @@ class Credit:
         self.staging_db_executor = StagingSpannerExecutorPool(self.logger)
 
     def _validate(self, user_id: int, amount: str):
-        _user_details = next(self.db_executor.user(user_id), None)
+        _user_details = next(self.db_executor.user_v2(user_id), None)
 
         if not _user_details:
             return FailureResponse(msg=f"User {user_id} Not Found")   
@@ -56,7 +57,7 @@ class Credit:
 
         return SuccessResponse(msg="Event is successfully validated", resp=_user_details)
 
-    def handle(self, user: User, credit_amount: float, trace_id:str, transaction_id: str):
+    def handle(self, user: UserV2, credit_amount: float, trace_id:str, transaction_id: str):
         sql="""
         UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id WHERE user_id=@user_id
         """
@@ -180,7 +181,7 @@ class Debit:
         self.staging_db_executor = StagingSpannerExecutorPool(self.logger)
 
     def _validate(self, user_id: int, amount: str):
-        _user_details = next(self.db_executor.user(user_id), None)
+        _user_details = next(self.db_executor.user_v2(user_id), None)
 
         if not _user_details:
             return FailureResponse(msg=f"User {user_id} Not Found")   
@@ -195,7 +196,7 @@ class Debit:
 
         return SuccessResponse(msg="Event is successfully validated", resp=_user_details)
 
-    def handle(self, user: User, debit_amount: float, trace_id:str, transaction_id: str):
+    def handle(self, user: UserV2, debit_amount: float, trace_id:str, transaction_id: str):
         sql="""
         UPDATE users SET balance=@balance, last_transaction_id=@last_transaction_id WHERE user_id=@user_id
         """
@@ -319,8 +320,8 @@ class Transfer:
         self.staging_db_executor = StagingSpannerExecutorPool(self.logger)
 
     def _validate(self, user_id: int, from_user_id: int, amount: str):
-        _user_details = next(self.db_executor.user(user_id), None)
-        _from_user_details = next(self.db_executor.user(from_user_id), None)
+        _user_details = next(self.db_executor.user_v2(user_id), None)
+        _from_user_details = next(self.db_executor.user_v2(from_user_id), None)
 
         if not _from_user_details:
             return FailureResponse(msg=f"From User {from_user_id} Not Found. Cannot transfer money to {user_id}") 
@@ -338,7 +339,7 @@ class Transfer:
 
         return SuccessResponse(msg="Event is successfully validated", resp={"to_user":_user_details,"from_user":_from_user_details})
 
-    def handle(self, to_user: User, from_user: User, transfer_amount: float, trace_id:str, transaction_id: str):
+    def handle(self, to_user: UserV2, from_user: UserV2, transfer_amount: float, trace_id:str, transaction_id: str):
         to_sql="""
         UPDATE users SET balance=@to_balance, last_transaction_id=@to_last_transaction_id WHERE user_id=@to_user_id
         """
