@@ -1,5 +1,4 @@
 import pandas as pd
-from uuid import uuid4
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -25,7 +24,7 @@ class EventsProcessor:
         for key, value in event.items():
             if isinstance(value, datetime):
                 event[key] = value.isoformat()
-            elif pd.isna(value):
+            elif value is None or (isinstance(value, float) and value != value):
                 event[key] = None
 
     # Process staged events in batches

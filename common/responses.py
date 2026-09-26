@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 @dataclass(slots=True)
 class SuccessResponse:
     msg: str = field(default="Request submission Successful")
-    resp: dict = field(default=lambda: dict({"status":"succesful"}))
+    resp: dict = field(default_factory=lambda: {"status": "successful"})
     status_code: int = field(default=200)
 
 

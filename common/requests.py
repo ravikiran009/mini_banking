@@ -1,5 +1,3 @@
-import json
-
 import requests
 from requests import Session
 from dataclasses import dataclass, field
@@ -19,8 +17,7 @@ class ExternalRequestHandler:
         try:
             resp = self.session.post(
                 url=url,
-                data=json.dumps(data, default=str),
-                headers={"Content-Type": "application/json"}
+                json=data
             )
             resp.raise_for_status()  # Raises HTTPError for 4xx/5xx status codes
             self.logger.info(f"Post to {url} successful with data: {data}", operation="ExternalEventHandler")

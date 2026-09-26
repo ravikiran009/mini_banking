@@ -1,9 +1,8 @@
 import os
 import pandas as pd
 
-from uuid import uuid4
 from typing import TypeVar
-from pydantic import BaseModel,ValidationError
+from pydantic import BaseModel
 from collections.abc import Iterator
 
 from google.cloud import spanner
@@ -35,7 +34,7 @@ _pool = BurstyPool(target_size=10)
 staging_database_instance = client.instance(instance_id=STAGING_INSTANCE_ID)
 _staging_database = staging_database_instance.database(database_id=STAGING_DATABASE_ID, pool=_pool)
 
-# Add BATCh_SIZE - defines number of events fetched at once
+# Add BATCH_SIZE - defines number of events fetched at once
 BATCH_SIZE = 1000
 
 
@@ -144,7 +143,32 @@ class StoreSpannerExecutorSingleton:
             return SuccessResponse(msg="Sql executed successfully")
         except Exception as exc:
             self.logger.error("Unable to process sql transaction",exc,operation="ExecuteSQL:StoreDb")
-            return FailureResponse(msg="Unable to process sql transaction "+str(exc))
+            return FailureResponse(msg="Unable to process sql transaction: "+str(exc))
+
+    def execute_transaction(self, statements: list[tuple[str, dict|None, dict|None]]):
+        """Executes multiple DML statements in a single atomic Spanner transaction."""
+        if not statements:
+            self.logger.info("Nothing to run", operation="ExecuteSQL:StoreDb")
+            return SuccessResponse(msg="No statements to execute")
+        for sql, params, param_types in statements:
+            if params:
+                if not param_types:
+                    self.logger.error("Param Types have to be defined if params is passed", operation="ExecuteSQL:StoreDb")
+                    raise InvalidSQLTransaction(msg="Param Types not passed")
+                if not set(params).issubset(set(param_types)):
+                    self.logger.error("Param Types missing: ", set(params)-set(param_types), operation="ExecuteSQL:StoreDb")
+                    raise InvalidSQLTransaction(msg="Param Types missing")
+        try:
+            def _unit_of_work(txn):
+                for sql, params, param_types in statements:
+                    txn.execute_update(dml=sql, params=params, param_types=param_types)
+
+            self.database.run_in_transaction(_unit_of_work)
+            self.logger.info(f"Transaction with {len(statements)} statements executed successfully", operation="ExecuteSQL:StoreDb")
+            return SuccessResponse(msg="Sql executed successfully")
+        except Exception as exc:
+            self.logger.error("Unable to process sql transaction", exc, operation="ExecuteSQL:StoreDb")
+            return FailureResponse(msg="Unable to process sql transaction: " + str(exc))
 
 
 class StagingSpannerExecutorPool:
@@ -231,5 +255,5 @@ class StagingSpannerExecutorPool:
             self.logger.info(f"Params: {params}", operation="ExecuteSQL:StagingDb")
             return SuccessResponse(msg="Sql executed successfully")
         except Exception as exc:
-            self.logger.error("Unable to proxess sql transaction",exc,operation="ExecuteSQL:StagingDb")
-            return FailureResponse(msg="Unable to process sql transaction"+str(exc))
+            self.logger.error("Unable to process sql transaction",exc,operation="ExecuteSQL:StagingDb")
+            return FailureResponse(msg="Unable to process sql transaction: "+str(exc))

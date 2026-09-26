@@ -1,4 +1,3 @@
-import importlib
 import traceback
 
 from dataclasses import dataclass, field
@@ -20,29 +19,27 @@ VALUES (@user_id, @transaction_id, @transaction_type, @amount, @from_user, @tran
 """
 
 
+UPDATE_STAGING_SQL = "UPDATE transactions_staging SET status=@status WHERE trace_id=@trace_id"
+STAGING_PARAM_TYPES = {
+    "status": param_types.INT64,
+    "trace_id": param_types.STRING
+}
+
+
 def mark_staging_status(staging_db_executor: StagingSpannerExecutorPool, trace_id: str, status: int):
     if not trace_id:
-        return
-    staging_sql = "UPDATE transactions_staging SET status=@status WHERE trace_id=@trace_id"
+        return FailureResponse(msg="Missing trace_id")
     staging_params = {"status": status, "trace_id": trace_id}
-    staging_param_types = {
-        "status": param_types.INT64,
-        "trace_id": param_types.STRING
-    }
-    staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
+    return staging_db_executor.update(sql=UPDATE_STAGING_SQL, params=staging_params, param_types=STAGING_PARAM_TYPES)
 
 
 @dataclass(slots=True)
 class Credit:
     logger: Logger
     event: dict
+    db_executor: StoreSpannerExecutorSingleton
+    staging_db_executor: StagingSpannerExecutorPool
     config: Config = field(default_factory=lambda: config)
-    db_executor: StoreSpannerExecutorSingleton = field(init=False)
-    staging_db_executor: StagingSpannerExecutorPool = field(init=False)
-
-    def __post_init__(self):
-        self.db_executor = StoreSpannerExecutorSingleton(self.logger)
-        self.staging_db_executor = StagingSpannerExecutorPool(self.logger)
 
     def _validate(self, user_id: int, amount: str):
         _user_details = next(self.db_executor.user_v2(user_id), None)
@@ -89,38 +86,22 @@ class Credit:
             "from_user": param_types.INT64,
             "transaction_timestamp": param_types.TIMESTAMP
         }
-        staging_sql="""
-        UPDATE transactions_staging SET status=@status WHERE trace_id=@trace_id
-        """
-        staging_params={
-            "status": 3,
-            "trace_id": trace_id
-        }
-        staging_param_types={
-            "status": param_types.INT64,
-            "trace_id": param_types.STRING
-        }
         try:
-            resp=self.db_executor.update(sql=sql, params=store_db_params, param_types=store_db_param_types)
+            resp=self.db_executor.execute_transaction([
+                (sql, store_db_params, store_db_param_types),
+                (UPDATE_TRANSACTION_SQL, tx_params, tx_param_types)
+            ])
             if isinstance(resp, SuccessResponse):
-                tx_resp=self.db_executor.update(sql=UPDATE_TRANSACTION_SQL, params=tx_params, param_types=tx_param_types)
-                if isinstance(tx_resp, SuccessResponse):
-                    staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
-                    if isinstance(staging_resp, SuccessResponse):
-                        return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-                    return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-                return FailureResponse(msg=f"Failed inserting transaction record. Tx executor resp: {tx_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-            # Mark event failed, revert store db state
-            store_db_params["balance"]=user.balance
-            store_db_params["last_transaction_id"]=user.last_transaction_id
-            staging_params["status"]=4
-            resp=self.db_executor.update(sql=sql, params=store_db_params, param_types=store_db_param_types)
-            staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
+                staging_resp = mark_staging_status(self.staging_db_executor, trace_id, 3)
+                if isinstance(staging_resp, SuccessResponse):
+                    return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+            mark_staging_status(self.staging_db_executor, trace_id, 4)
             return FailureResponse(msg=f"Failed processing transaction at store db level. Store executor resp: {resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
         except InvalidSQLTransaction as exc:
             return FailureResponse(msg=exc.msg+"$$$"+traceback.format_exc().replace("\n","$$$"))
         except Exception as exc:
-            self.logger.error("Error in CreditEventHander: ", exc, operation="CreditEventHandler")
+            self.logger.error("Error in CreditEventHandler: ", exc, operation="CreditEventHandler")
             return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"))
 
     def process(self):
@@ -172,13 +153,9 @@ class Credit:
 class Debit:
     logger: Logger
     event: dict
+    db_executor: StoreSpannerExecutorSingleton
+    staging_db_executor: StagingSpannerExecutorPool
     config: Config = field(default_factory=lambda: config)
-    db_executor: StoreSpannerExecutorSingleton = field(init=False)
-    staging_db_executor: StagingSpannerExecutorPool = field(init=False)
-
-    def __post_init__(self):
-        self.db_executor = StoreSpannerExecutorSingleton(self.logger)
-        self.staging_db_executor = StagingSpannerExecutorPool(self.logger)
 
     def _validate(self, user_id: int, amount: str):
         _user_details = next(self.db_executor.user_v2(user_id), None)
@@ -228,38 +205,22 @@ class Debit:
             "from_user": param_types.INT64,
             "transaction_timestamp": param_types.TIMESTAMP
         }
-        staging_sql="""
-        UPDATE transactions_staging SET status=@status WHERE trace_id=@trace_id
-        """
-        staging_params={
-            "status": 3,
-            "trace_id": trace_id
-        }
-        staging_param_types={
-            "status": param_types.INT64,
-            "trace_id": param_types.STRING
-        }
         try:
-            resp=self.db_executor.update(sql=sql, params=store_db_params, param_types=store_db_param_types)
+            resp=self.db_executor.execute_transaction([
+                (sql, store_db_params, store_db_param_types),
+                (UPDATE_TRANSACTION_SQL, tx_params, tx_param_types)
+            ])
             if isinstance(resp, SuccessResponse):
-                tx_resp=self.db_executor.update(sql=UPDATE_TRANSACTION_SQL, params=tx_params, param_types=tx_param_types)
-                if isinstance(tx_resp, SuccessResponse):
-                    staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
-                    if isinstance(staging_resp, SuccessResponse):
-                        return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-                    return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-                return FailureResponse(msg=f"Failed inserting transaction record. Tx executor resp: {tx_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-            # Mark event failed, revert store db state
-            store_db_params["balance"]=user.balance
-            store_db_params["last_transaction_id"]=user.last_transaction_id
-            staging_params["status"]=4
-            resp=self.db_executor.update(sql=sql, params=store_db_params, param_types=store_db_param_types)
-            staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
+                staging_resp = mark_staging_status(self.staging_db_executor, trace_id, 3)
+                if isinstance(staging_resp, SuccessResponse):
+                    return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+            mark_staging_status(self.staging_db_executor, trace_id, 4)
             return FailureResponse(msg=f"Failed processing transaction at store db level. Store executor resp: {resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
         except InvalidSQLTransaction as exc:
             return FailureResponse(msg=exc.msg+"$$$"+traceback.format_exc().replace("\n","$$$"))
         except Exception as exc:
-            self.logger.error("Error in DebitEventHander: ", exc, operation="DebitEventHandler")
+            self.logger.error("Error in DebitEventHandler: ", exc, operation="DebitEventHandler")
             return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"))
 
     def process(self):
@@ -311,13 +272,9 @@ class Debit:
 class Transfer:
     logger: Logger
     event: dict
+    db_executor: StoreSpannerExecutorSingleton
+    staging_db_executor: StagingSpannerExecutorPool
     config: Config = field(default_factory=lambda: config)
-    db_executor: StoreSpannerExecutorSingleton = field(init=False)
-    staging_db_executor: StagingSpannerExecutorPool = field(init=False)
-
-    def __post_init__(self):
-        self.db_executor = StoreSpannerExecutorSingleton(self.logger)
-        self.staging_db_executor = StagingSpannerExecutorPool(self.logger)
 
     def _validate(self, user_id: int, from_user_id: int, amount: str):
         _user_details = next(self.db_executor.user_v2(user_id), None)
@@ -384,42 +341,23 @@ class Transfer:
             "from_user": param_types.INT64,
             "transaction_timestamp": param_types.TIMESTAMP
         }
-        staging_sql="""
-        UPDATE transactions_staging SET status=@status WHERE trace_id=@trace_id
-        """
-        staging_params={
-            "status": 3,
-            "trace_id": trace_id
-        }
-        staging_param_types={
-            "status": param_types.INT64,
-            "trace_id": param_types.STRING
-        }
         try:
-            to_resp=self.db_executor.update(sql=to_sql, params=to_params, param_types=to_param_types)
-            from_resp=self.db_executor.update(sql=from_sql, params=from_params, param_types=from_param_types)
-            if isinstance(to_resp, SuccessResponse) and isinstance(from_resp, SuccessResponse):
-                tx_resp=self.db_executor.update(sql=UPDATE_TRANSACTION_SQL, params=tx_params, param_types=tx_param_types)
-                if isinstance(tx_resp, SuccessResponse):
-                    staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
-                    if isinstance(staging_resp, SuccessResponse):
-                        return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-                    return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-                return FailureResponse(msg=f"Failed inserting transaction record. Tx executor resp: {tx_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
-            # Mark event failed, revert store db state
-            to_params["to_balance"]=to_user.balance
-            to_params["to_last_transaction_id"]=to_user.last_transaction_id
-            from_params["from_balance"]=from_user.balance
-            from_params["from_last_transaction_id"]=from_user.last_transaction_id
-            staging_params["status"]=4
-            to_resp=self.db_executor.update(sql=to_sql, params=to_params, param_types=to_param_types)
-            from_resp=self.db_executor.update(sql=from_sql, params=from_params, param_types=from_param_types)
-            staging_resp=self.staging_db_executor.update(sql=staging_sql, params=staging_params, param_types=staging_param_types)
-            return FailureResponse(msg=f"Failed processing transaction at store db level. Store executor to_resp: {to_resp.msg}, from_resp: {from_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+            resp=self.db_executor.execute_transaction([
+                (to_sql, to_params, to_param_types),
+                (from_sql, from_params, from_param_types),
+                (UPDATE_TRANSACTION_SQL, tx_params, tx_param_types)
+            ])
+            if isinstance(resp, SuccessResponse):
+                staging_resp = mark_staging_status(self.staging_db_executor, trace_id, 3)
+                if isinstance(staging_resp, SuccessResponse):
+                    return SuccessResponse(msg=f"Successfully processed transaction. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+                return FailureResponse(msg=f"Failed processing transaction at staging db level. Staging executor resp: {staging_resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
+            mark_staging_status(self.staging_db_executor, trace_id, 4)
+            return FailureResponse(msg=f"Failed processing transaction at store db level. Store executor resp: {resp.msg}. Trace_Id: {trace_id}, Transaction_Id: {transaction_id}.")
         except InvalidSQLTransaction as exc:
             return FailureResponse(msg=exc.msg+"$$$"+traceback.format_exc().replace("\n","$$$"))
         except Exception as exc:
-            self.logger.error("Error in TransferEventHander: ", exc, operation="TransferEventHandler")
+            self.logger.error("Error in TransferEventHandler: ", exc, operation="TransferEventHandler")
             return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"))
 
     def process(self):
@@ -479,6 +417,8 @@ HANDLERS = {
 class TransactionProcessor:
     logger: Logger
     event: dict
+    db_executor: StoreSpannerExecutorSingleton
+    staging_db_executor: StagingSpannerExecutorPool
 
     def process(self):
         try:
@@ -494,12 +434,17 @@ class TransactionProcessor:
             if not event_handler_cls:
                 msg=f"{txn_type} is not allowed, Allowed types: {tuple(HANDLERS.keys())}"
                 raise InvalidTransactionEvent(msg=msg)
-            event_handler = event_handler_cls(self.logger, self.event)
+            event_handler = event_handler_cls(
+                logger=self.logger,
+                event=self.event,
+                db_executor=self.db_executor,
+                staging_db_executor=self.staging_db_executor
+            )
             handler_resp=event_handler.process()
             return handler_resp
         except InvalidTransactionEvent as exc:
-            mark_staging_status(StagingSpannerExecutorPool(self.logger), (self.event or {}).get("trace_id"), 5)
+            mark_staging_status(self.staging_db_executor, (self.event or {}).get("trace_id"), 5)
             return FailureResponse(msg="TransactionProcessor failed"+"$$$"+str(exc.msg)+"$$$"+traceback.format_exc().replace("\n","$$$"))
         except Exception as exc:
-            mark_staging_status(StagingSpannerExecutorPool(self.logger), (self.event or {}).get("trace_id"), 4)
+            mark_staging_status(self.staging_db_executor, (self.event or {}).get("trace_id"), 4)
             return FailureResponse(msg="TransactionProcessor failed"+"$$$"+str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"))
