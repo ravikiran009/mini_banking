@@ -6,7 +6,6 @@ from datetime import datetime
 from google.cloud.spanner_v1 import param_types
 
 from common.logger import Logger 
-from common.config import config, Config
 from common.db import StoreSpannerExecutorSingleton, StagingSpannerExecutorPool
 from common.models.user import UserV2
 from common.responses import SuccessResponse, FailureResponse, ActionNotRequired
@@ -39,7 +38,6 @@ class Credit:
     event: dict
     db_executor: StoreSpannerExecutorSingleton
     staging_db_executor: StagingSpannerExecutorPool
-    config: Config = field(default_factory=lambda: config)
 
     def _validate(self, user_id: int, amount: str):
         _user_details = next(self.db_executor.user_v2(user_id), None)
@@ -155,7 +153,6 @@ class Debit:
     event: dict
     db_executor: StoreSpannerExecutorSingleton
     staging_db_executor: StagingSpannerExecutorPool
-    config: Config = field(default_factory=lambda: config)
 
     def _validate(self, user_id: int, amount: str):
         _user_details = next(self.db_executor.user_v2(user_id), None)
@@ -274,7 +271,6 @@ class Transfer:
     event: dict
     db_executor: StoreSpannerExecutorSingleton
     staging_db_executor: StagingSpannerExecutorPool
-    config: Config = field(default_factory=lambda: config)
 
     def _validate(self, user_id: int, from_user_id: int, amount: str):
         _user_details = next(self.db_executor.user_v2(user_id), None)

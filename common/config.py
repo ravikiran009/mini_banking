@@ -23,9 +23,7 @@ def safe_load_json(filepath: Path | str) -> dict:
 
 @dataclass
 class Config:
-    logger: Logger = field(default_factory=lambda: Logger(operation="ConfigHandler"))
-
-    def __post_init__(self):
+    def __init__(self):
         for name,value in safe_load_json(URL_MAPPING_FILE).items():
             setattr(self,name,value)
 

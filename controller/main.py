@@ -11,13 +11,10 @@ from common.responses import SuccessResponse, FailureResponse
 
 @dataclass(slots=True)
 class EventsProcessor:
-    logger: Logger = field(default_factory=lambda: Logger(operation='EventsProcessor'))
-    config: Config = field(default_factory=lambda: config)
-    external_request_handler: ExternalRequestHandler = field(init=False)
-
-    # Pass the same logger to ExternalRequestHandler that calls processor post endpoint
-    def __post_init__(self):
-        self.external_request_handler = ExternalRequestHandler(self.logger)
+    logger: Logger
+    external_request_handler: ExternalRequestHandler
+    staging_db_executor: StagingSpannerExecutorPool
+    config: Config
 
     # Format event fields for proper Json Serializing
     def _preprocess(self, event: dict):
@@ -42,10 +39,8 @@ class EventsProcessor:
 
     # Fetch staged events
     def consume_events(self):
-        stg_pool = StagingSpannerExecutorPool(self.logger)
-
         batches_processed = 0
-        for events in stg_pool.get_transaction_events():
+        for events in self.staging_db_executor.get_transaction_events():
             self.batch_process_events(events)
             batches_processed += 1
             if batches_processed%BATCH_SIZE == 0:
