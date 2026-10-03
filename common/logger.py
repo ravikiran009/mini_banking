@@ -1,16 +1,18 @@
+import os
 from uuid import uuid4
 from dataclasses import dataclass, field
 
 
 # Class-level constant — shared across all Logger instances, zero per-instance allocation
 _ALLOWED_LOGS = {'debug': 10, 'info': 20, 'error': 30}
+_DEFAULT_LOG_LEVEL = _ALLOWED_LOGS.get(os.getenv("LOG_LEVEL", "info").lower(), 20)
 
 
 @dataclass(slots=True)
 class Logger:
     trace_id: str = field(default_factory=lambda: str(uuid4()))
     operation: str | None = field(default=None)
-    log_level: int = field(default=10)
+    log_level: int = field(default=_DEFAULT_LOG_LEVEL)
 
     def _log(self, level_key: str, *args, **kwargs):
         log_level = _ALLOWED_LOGS.get(level_key, 0)

@@ -107,7 +107,7 @@ class Credit:
         credit_amount=self.event.get("amount")
         trace_id=self.event.get("trace_id")
         transaction_id=self.event.get('transaction_id')
-        self.logger.info(f"Credit event {transaction_id} processing...")
+        self.logger.debug(f"Credit event {transaction_id} processing...")
         try:
             resp_object = self._validate(user_id=user_id, amount=credit_amount)
             if isinstance(resp_object, FailureResponse):
@@ -124,9 +124,9 @@ class Credit:
             self.logger.error("Unexpected error during event validation: ", exc)
             mark_staging_status(self.staging_db_executor, trace_id, 4)
             return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=500)
-        self.logger.info(f"Credit event {transaction_id} validated successfully")
+        self.logger.debug(f"Credit event {transaction_id} validated successfully")
         if isinstance(resp_object, ActionNotRequired):
-            self.logger.info(f"Credit event {transaction_id} no need to process")
+            self.logger.debug(f"Credit event {transaction_id} no need to process")
             mark_staging_status(self.staging_db_executor, trace_id, 3)
             return SuccessResponse(
                 msg="Event is successfully processed", 
@@ -136,7 +136,7 @@ class Credit:
                     "transaction_id":transaction_id
                 }
             )
-        self.logger.info(f"Credit event {transaction_id} handler started...")
+        self.logger.debug(f"Credit event {transaction_id} handler started...")
         handler_resp=self.handle(user=resp_object.resp, credit_amount=credit_amount, trace_id=trace_id, transaction_id=transaction_id)
         if isinstance(handler_resp, SuccessResponse):
             handler_resp.resp={
@@ -225,7 +225,7 @@ class Debit:
         debit_amount=self.event.get("amount")
         trace_id=self.event.get("trace_id")
         transaction_id=self.event.get('transaction_id')
-        self.logger.info(f"Debit event {transaction_id} processing...")
+        self.logger.debug(f"Debit event {transaction_id} processing...")
         try:
             resp_object = self._validate(user_id=user_id, amount=debit_amount)
             if isinstance(resp_object, FailureResponse):
@@ -242,9 +242,9 @@ class Debit:
             self.logger.error("Unexpected error during event validation: ", exc)
             mark_staging_status(self.staging_db_executor, trace_id, 4)
             return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=500)
-        self.logger.info(f"Debit event {transaction_id} validated successfully")
+        self.logger.debug(f"Debit event {transaction_id} validated successfully")
         if isinstance(resp_object, ActionNotRequired):
-            self.logger.info(f"Debit event {transaction_id} no need to process")
+            self.logger.debug(f"Debit event {transaction_id} no need to process")
             mark_staging_status(self.staging_db_executor, trace_id, 3)
             return SuccessResponse(
                 msg="Event is successfully processed", 
@@ -254,7 +254,7 @@ class Debit:
                     "transaction_id":transaction_id
                 }
             )
-        self.logger.info(f"Debit event {transaction_id} handler started...")
+        self.logger.debug(f"Debit event {transaction_id} handler started...")
         handler_resp=self.handle(user=resp_object.resp, debit_amount=debit_amount, trace_id=trace_id, transaction_id=transaction_id)
         if isinstance(handler_resp, SuccessResponse):
             handler_resp.resp={
@@ -273,8 +273,11 @@ class Transfer:
     staging_db_executor: StagingSpannerExecutorPool
 
     def _validate(self, user_id: int, from_user_id: int, amount: str):
-        _user_details = next(self.db_executor.user_v2(user_id), None)
-        _from_user_details = next(self.db_executor.user_v2(from_user_id), None)
+        # Fetch both users in a single snapshot query using IN UNNEST
+        user_ids = list({user_id, from_user_id})
+        user_map = {u.user_id: u for u in self.db_executor.users_v2(user_ids)}
+        _user_details = user_map.get(user_id)
+        _from_user_details = user_map.get(from_user_id)
 
         if not _from_user_details:
             return FailureResponse(msg=f"From User {from_user_id} Not Found. Cannot transfer money to {user_id}") 
@@ -362,7 +365,7 @@ class Transfer:
         transfer_amount=self.event.get("amount")
         trace_id=self.event.get("trace_id")
         transaction_id=self.event.get('transaction_id')
-        self.logger.info(f"Transfer event {transaction_id} processing...")
+        self.logger.debug(f"Transfer event {transaction_id} processing...")
         try:
             resp_object = self._validate(user_id=user_id, from_user_id=from_user_id, amount=transfer_amount)
             if isinstance(resp_object, FailureResponse):
@@ -379,9 +382,9 @@ class Transfer:
             self.logger.error("Unexpected error during event validation: ", exc)
             mark_staging_status(self.staging_db_executor, trace_id, 4)
             return FailureResponse(msg=str(exc)+"$$$"+traceback.format_exc().replace("\n","$$$"), status_code=500)
-        self.logger.info(f"Transfer event {transaction_id} validated successfully")
+        self.logger.debug(f"Transfer event {transaction_id} validated successfully")
         if isinstance(resp_object, ActionNotRequired):
-            self.logger.info(f"Transfer event {transaction_id} no need to process")
+            self.logger.debug(f"Transfer event {transaction_id} no need to process")
             mark_staging_status(self.staging_db_executor, trace_id, 3)
             return SuccessResponse(
                 msg="Event is successfully processed", 
@@ -391,7 +394,7 @@ class Transfer:
                     "transaction_id":transaction_id
                 }
             )
-        self.logger.info(f"Transfer event {transaction_id} handler started...")
+        self.logger.debug(f"Transfer event {transaction_id} handler started...")
         handler_resp=self.handle(to_user=resp_object.resp.get("to_user"), from_user=resp_object.resp.get("from_user"), transfer_amount=transfer_amount, trace_id=trace_id, transaction_id=transaction_id)
         if isinstance(handler_resp, SuccessResponse):
             handler_resp.resp={

@@ -20,7 +20,7 @@ class ExternalRequestHandler:
                 json=data
             )
             resp.raise_for_status()  # Raises HTTPError for 4xx/5xx status codes
-            self.logger.info(f"Post to {url} successful with data: {data}", operation="ExternalEventHandler")
+            self.logger.debug(f"Post to {url} successful with data: {data}", operation="ExternalEventHandler")
             return SuccessResponse(msg="Post Successful")
         except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError) as exc:
             # Auto-heal: Broken/corrupted socket. Discard and refresh singleton session.

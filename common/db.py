@@ -93,6 +93,18 @@ class StoreSpannerExecutorSingleton:
             self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchUserV2")
             raise InvalidSQLTransaction(msg=str(exc))
 
+    def users_v2(self, user_ids: list[int]) -> Iterator[UserV2]:
+        sql = "select * from users where user_id in UNNEST(@user_ids)"
+        params = {"user_ids": user_ids}
+        param_types = {"user_ids": spanner.param_types.Array(spanner.param_types.INT64)}
+        try:
+            with self.database.snapshot() as db:
+                results = db.execute_sql(sql=sql, params=params, param_types=param_types)
+                yield from self._yield_response_payload_v2(UserV2, results)
+        except Exception as exc:
+            self.logger.error(f"Unable to retrieve data : {exc}", operation="FetchUsersV2")
+            raise InvalidSQLTransaction(msg=str(exc))
+
     def transactions(self, user_id:int, limit: int|None) -> Iterator[Transaction]:
         sql="select * from transactions where user_id = @user_id order by transaction_timestamp"
         params={"user_id":user_id}
@@ -127,7 +139,7 @@ class StoreSpannerExecutorSingleton:
 
     def update(self, sql: str, params: dict|None = None, param_types: dict|None = None):
         if not sql:
-            self.logger.info("Nothing to run", operation="ExecuteSQL")
+            self.logger.debug("Nothing to run", operation="ExecuteSQL")
             return
         if params:
             if not param_types:
@@ -138,17 +150,17 @@ class StoreSpannerExecutorSingleton:
                 raise InvalidSQLTransaction(msg="Param Types missing")
         try:
             self.database.run_in_transaction(lambda txn: txn.execute_update(dml=sql, params=params, param_types=param_types))
-            # self.logger.info(f"Executing sql: {sql}, params: {params}, param_types: {param_types}", operation="ExecuteSQL:StoreDb")
-            self.logger.info(f"Params: {params}", operation="ExecuteSQL:StoreDb")
+            # self.logger.debug(f"Executing sql: {sql}, params: {params}, param_types: {param_types}", operation="ExecuteSQL:StoreDb")
+            self.logger.debug(f"Params: {params}", operation="ExecuteSQL:StoreDb")
             return SuccessResponse(msg="Sql executed successfully")
         except Exception as exc:
             self.logger.error("Unable to process sql transaction",exc,operation="ExecuteSQL:StoreDb")
             return FailureResponse(msg="Unable to process sql transaction: "+str(exc))
 
     def execute_transaction(self, statements: list[tuple[str, dict|None, dict|None]]):
-        """Executes multiple DML statements in a single atomic Spanner transaction."""
+        """Executes multiple DML statements in a single atomic Spanner transaction via ExecuteBatchDml."""
         if not statements:
-            self.logger.info("Nothing to run", operation="ExecuteSQL:StoreDb")
+            self.logger.debug("Nothing to run", operation="ExecuteSQL:StoreDb")
             return SuccessResponse(msg="No statements to execute")
         for sql, params, param_types in statements:
             if params:
@@ -160,11 +172,12 @@ class StoreSpannerExecutorSingleton:
                     raise InvalidSQLTransaction(msg="Param Types missing")
         try:
             def _unit_of_work(txn):
-                for sql, params, param_types in statements:
-                    txn.execute_update(dml=sql, params=params, param_types=param_types)
+                status, row_counts = txn.batch_update(statements)
+                if status.code != 0:
+                    raise InvalidSQLTransaction(msg=f"Batch DML failed (code {status.code}): {status.message}")
 
             self.database.run_in_transaction(_unit_of_work)
-            self.logger.info(f"Transaction with {len(statements)} statements executed successfully", operation="ExecuteSQL:StoreDb")
+            self.logger.debug(f"Transaction with {len(statements)} statements executed successfully", operation="ExecuteSQL:StoreDb")
             return SuccessResponse(msg="Sql executed successfully")
         except Exception as exc:
             self.logger.error("Unable to process sql transaction", exc, operation="ExecuteSQL:StoreDb")
@@ -240,7 +253,7 @@ class StagingSpannerExecutorPool:
     
     def update(self, sql: str, params: dict|None = None, param_types: dict|None = None):
         if not sql:
-            self.logger.info("Nothing to run", operation="ExecuteSQL")
+            self.logger.debug("Nothing to run", operation="ExecuteSQL")
             return
         if params:
             if not param_types:
@@ -251,8 +264,8 @@ class StagingSpannerExecutorPool:
                 raise InvalidSQLTransaction(msg="Param Types missing")
         try:
             self.database.run_in_transaction(lambda txn: txn.execute_update(dml=sql, params=params, param_types=param_types))
-            # self.logger.info(f"Executing sql: {sql}, params: {params}, param_types: {param_types}", operation="ExecuteSQL:StagingDb")
-            self.logger.info(f"Params: {params}", operation="ExecuteSQL:StagingDb")
+            # self.logger.debug(f"Executing sql: {sql}, params: {params}, param_types: {param_types}", operation="ExecuteSQL:StagingDb")
+            self.logger.debug(f"Params: {params}", operation="ExecuteSQL:StagingDb")
             return SuccessResponse(msg="Sql executed successfully")
         except Exception as exc:
             self.logger.error("Unable to process sql transaction",exc,operation="ExecuteSQL:StagingDb")
