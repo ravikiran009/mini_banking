@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from common.logger import Logger
 from common.responses import SuccessResponse, FailureResponse
-from common.utils import get_session, close_session
+from common.utils import get_session
 
 @dataclass(slots=True)
 class ExternalRequestHandler:
@@ -22,19 +22,9 @@ class ExternalRequestHandler:
             resp.raise_for_status()  # Raises HTTPError for 4xx/5xx status codes
             self.logger.debug(f"Post to {url} successful with data: {data}", operation="ExternalEventHandler")
             return SuccessResponse(msg="Post Successful")
-        except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError) as exc:
-            # Auto-heal: Broken/corrupted socket. Discard and refresh singleton session.
-            self.logger.error(f"Connection corrupted on '{url}', resetting session: {exc}", operation="ExternalEventHandler")
-            close_session()
-            self.session = get_session()
-            return FailureResponse(msg=exc)
-        except Exception as exc:
+        except requests.exceptions.RequestException as exc:
             self.logger.error(f"Failed to post to url '{url}': {exc}", operation="ExternalEventHandler")
             return FailureResponse(msg=exc)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None and issubclass(exc_type, (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError)):
-            close_session()
+        except Exception as exc:
+            self.logger.error(f"Unexpected error posting to url '{url}': {exc}", operation="ExternalEventHandler")
+            return FailureResponse(msg=exc)

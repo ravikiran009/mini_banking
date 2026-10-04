@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -39,13 +40,27 @@ class EventsProcessor:
             self.logger.error(f"Unable to process event trace_id={event.get('trace_id')}: {exc}")
             return FailureResponse(msg=f"Unable to post event: {exc}")
 
-    # Process staged events in batches concurrently
+    def _process_user_events(self, user_events: list[dict]):
+        for event in user_events:
+            self._process_single_event(event)
+
+    # Process staged events in batches concurrently with sequential execution per user
     def batch_process_events(self, events: pd.DataFrame, executor: ThreadPoolExecutor):
         records = events.to_dict(orient="records")
         if not records:
             return SuccessResponse(msg="BatchProcess events completed")
 
-        futures = [executor.submit(self._process_single_event, record) for record in records]
+        # Group records by user_id so events for the same user are processed strictly in sequence
+        user_events_map = defaultdict(list)
+        for idx, record in enumerate(records):
+            user_id = record.get("user_id")
+            key = user_id if user_id is not None else f"__unassigned_{idx}__"
+            user_events_map[key].append(record)
+
+        futures = [
+            executor.submit(self._process_user_events, user_records)
+            for user_records in user_events_map.values()
+        ]
         for future in as_completed(futures):
             try:
                 future.result()
