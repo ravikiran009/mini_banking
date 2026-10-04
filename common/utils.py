@@ -51,7 +51,9 @@ def get_session() -> Session:
                     status_forcelist=[500, 502, 503, 504],
                     raise_on_status=False
                 )
-                adapter = HTTPAdapter(max_retries=retries, pool_connections=20, pool_maxsize=20)
+                workers = int(os.getenv("CONTROLLER_MAX_WORKERS", "8"))
+                pool_size = max(20, workers + 10)
+                adapter = HTTPAdapter(max_retries=retries, pool_connections=pool_size, pool_maxsize=pool_size)
                 s.mount("http://", adapter)
                 s.mount("https://", adapter)
                 _session = s
